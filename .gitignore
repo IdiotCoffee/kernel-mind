@@ -18,3 +18,6 @@ repos/
 # Editor swap files
 *.swp
 *.swo
+
+# Chroma DB database
+.chromadb/
