@@ -1,89 +1,82 @@
 import ollama
 
+# ===============================
+#  STRICT TEMPLATE
+# ===============================
 SYNTHESIS_TEMPLATE = """
-You are a code-understanding model. Your job is to produce a precise, 
-grounded explanation using ONLY the retrieved source code chunks.
+You are a strict code-grounded summarizer for senior engineers.
+You will produce a short, precise, fully-grounded answer that uses ONLY the code in === SOURCE CODE START === / === SOURCE CODE END ===.
 
-USER QUESTION:
+INPUT:
+Question:
 [QUESTION]
 
-You are given code chunks from a real repository. These chunks are the 
-ONLY source of truth. Everything you say MUST be supported by the code below.
-
-=== SOURCE CODE START ===
+Source chunks:
 [CHUNKS]
-=== SOURCE CODE END ===
 
-STRICT RULES:
+INVARIANT RULES (must obey exactly):
+1) Use only the code in [CHUNKS]. If the answer cannot be found exactly in those chunks, output exactly the single line:
+   Not found in retrieved code.
+   and stop (no extra text).
+2) Every factual statement must end with a citation in this exact format:
+   (file: <path>, <symbol>, lines <start>–<end>)
+3) Do not use speculative language. Forbidden: likely, probably, might, maybe, generally, usually, often.
+4) No repetition. Each sentence must be unique.
+5) Never invent code or behavior not explicitly present.
+6) Do not quote code unless it appears verbatim in the chunks.
+7) Output MUST be plain text. No markdown fences.
 
-1. Every statement in your answer must be grounded directly in the retrieved 
-   code or in a call-chain explicitly visible in the code. 
-   Absolutely no external knowledge.
+OUTPUT FORMAT:
+1) One-line summary sentence (ends with citation).
+2) Numbered explanation steps (1–N). Each sentence must end with a citation.
+3) No conclusion, no extra sections.
 
-2. NEVER use speculative language.
-   Forbidden words: likely, probably, might, maybe, generally, usually, often.
-
-3. When referencing something, ALWAYS cite:
-   - the file path
-   - the function or class name
-   - and line numbers if shown.
-
-4. If the code shows call-chains (A → B → C), explain the flow in that order.
-   If only part of the chain is shown, explain only what is visible and 
-   logically implied from the calls.
-
-5. NEVER repeat your answer. 
-   NEVER restate the same paragraph twice.
-
-6. NEVER describe code that does not appear in the chunks. 
-   If something is not present, do NOT invent it.
-
-7. If the retrieved chunks do not contain the answer, say:
-      “Not found in retrieved code.”
-   and stop.
-
-8. The final answer must be a tightly written explanation for a senior engineer.
-   Prefer short, direct paragraphs over long rambling text.
-
-FORMAT TO FOLLOW:
-
-1. One short summary sentence.
-2. A step-by-step explanation grounded strictly in the retrieved code.
-3. Use bullet points when describing sequences or call-chains.
-
-Begin your answer now.
+Begin now.
 """
 
+# ===============================
+#  Chunk formatting utilities
+# ===============================
 
 def format_chunks(chunks):
     """
-    chunks is a list of dicts:
-        {
-            "text": "...",
-            "path": "...",
-            "start": int,
-            "end": int
-        }
+    chunks: list of dicts with fields:
+        text, path, start, end
     """
     out = []
     for c in chunks:
-        header = f"--- File: {c.get('path','unknown')} ({c.get('start')}–{c.get('end')}) ---"
+        path = c.get("path", "unknown")
+        start = c.get("start", "?")
+        end = c.get("end", "?")
+
+        header = f"--- File: {path} ({start}–{end}) ---"
         out.append(header)
         out.append(c["text"])
-        out.append("")  # newline
+        out.append("")  # blank line for readability
+
     return "\n".join(out)
 
 
 def build_prompt(query, chunks):
+    """
+    Takes user query + chunk list → builds the full prompt sent to Gemma.
+    """
     formatted = format_chunks(chunks)
     prompt = SYNTHESIS_TEMPLATE.replace("[QUESTION]", query)
     prompt = prompt.replace("[CHUNKS]", formatted)
     return prompt
 
 
+# ===============================
+#  Synthesis (Gemma)
+# ===============================
+
 def synthesize_answer(query: str, chunks: list, model: str = "gemma2:9b"):
     """
-    Generate the final synthesized answer using Gemma.
+    Uses Gemma through Ollama to synthesize a grounded explanation.
+    - deterministic output (temperature 0)
+    - no hallucinations
+    - inline citations enforced
     """
     prompt = build_prompt(query, chunks)
 
@@ -91,16 +84,13 @@ def synthesize_answer(query: str, chunks: list, model: str = "gemma2:9b"):
         model=model,
         prompt=prompt,
         options={
-            "temperature": 0.1,
-            "top_p": 0.9,
+            "temperature": 0.2,
+            "top_p": 1.0,
             "max_tokens": 4096,
-        }
+        },
     )
 
-    # Ollama returns: { "response": "...", ... }
-    answer = response.get("response", "").strip()
-    return answer
+    return response.get("response", "").strip()
 
 
 __all__ = ["synthesize_answer"]
-

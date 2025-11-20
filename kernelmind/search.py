@@ -1,16 +1,32 @@
-# kernelmind/search.py
-import chromadb
+import os
 import re
-from kernelmind.embeddings.local_backend import LocalEmbeddingBackend
+import math
+from typing import List, Tuple
+
+import chromadb
 from rank_bm25 import BM25Okapi
+
+from kernelmind.embeddings.local_backend import LocalEmbeddingBackend
 from kernelmind.utils.rewriter import QueryRewriter
 from kernelmind.synthesis import synthesize_answer
+
+# Reranker imports (transformers)
+try:
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+except Exception:
+    AutoTokenizer = None
+    AutoModelForSequenceClassification = None
+    pipeline = None
 
 # ----------------------------------
 # Init
 # ----------------------------------
 _EMBEDDER = LocalEmbeddingBackend()
 _REWRITER = QueryRewriter()
+
+# Reranker will be created lazily when first used
+_RERANKER = None
+_RERANKER_MODEL = "BAAI/bge-reranker-base"
 
 CANDIDATE_MULTIPLIER = 12
 
@@ -34,28 +50,21 @@ BLOCKED_FOLDERS = [
 
 token_pattern = re.compile(r"\w+")
 
-# Find function/method calls like "foo(", "obj.method(" or "A.B.C("
 CALL_PATTERN = re.compile(
     r"\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\("
 )
 
-
 def tokenize(text):
     return token_pattern.findall((text or "").lower())
 
-
 def should_allow(path: str, query: str):
     p = (path or "").lower()
-
     if "test" in query.lower() or "docs" in query.lower():
         return True
-
     for bad in BLOCKED_FOLDERS:
         if bad in p:
             return False
-
     return True
-
 
 def pretty(indoc, inmeta, indists):
     for i in range(len(indoc)):
@@ -72,32 +81,18 @@ def pretty(indoc, inmeta, indists):
         print("\nCode:\n")
         print(indoc[i])
 
-
 def extract_called_symbols(text: str):
-    """
-    Return a set of simple symbol tokens to search for (last dotted token).
-    Example: 'self.prepare_request(' -> 'prepare_request'
-    """
     found = set()
     if not text:
         return found
     for match in CALL_PATTERN.finditer(text):
         sym = match.group(1)
         tok = sym.split(".")[-1]
-        # exclude common keywords or single-letter tokens
         if tok and tok not in ("if", "for", "while", "return", "class", "with", "async"):
             found.add(tok)
     return found
 
-
 def _meta_matches_symbol(meta: dict, sym: str):
-    """
-    Returns True if the metadata corresponds to the symbol `sym`.
-    Checks:
-      - exact name match
-      - qualified_name last segment match
-      - qualified_name exact match
-    """
     if not meta:
         return False
     name = meta.get("name") or ""
@@ -108,24 +103,15 @@ def _meta_matches_symbol(meta: dict, sym: str):
         return True
     if qual.split(".") and qual.split(".")[-1] == sym:
         return True
-    # also allow entries that use 'class'+'method' naming pattern
     return False
 
-
 def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol=6):
-    """
-    initial_chunks: list of tuples (doc_text, meta_dict, dist)
-    collection: chroma collection object
-    Uses _EMBEDDER to embed symbol names so query dims match the collection.
-    Returns a list of tuples (doc, meta, dist) that include seeds + discovered call targets.
-    """
     seen = set()
     expanded = []
 
     def key_of(meta):
         return (meta.get("path"), meta.get("qualified_name") or meta.get("name"), meta.get("type"))
 
-    # seed the seen set and expanded list
     for doc, meta, dist in initial_chunks:
         if not meta:
             continue
@@ -137,11 +123,9 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
     for level in range(depth):
         if not frontier:
             break
-
         next_frontier = []
 
         for doc, meta, dist in frontier:
-            # only expand from function or method chunks (avoid huge file chunks)
             if meta.get("type") not in ("function", "method"):
                 continue
 
@@ -150,11 +134,9 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
                 continue
 
             for sym in symbols:
-                # embed symbol using your local embedder so query dims match the collection
                 try:
                     sym_emb = _EMBEDDER.embed([sym])
                 except Exception:
-                    # embedding failed for some reason: skip this symbol
                     continue
 
                 try:
@@ -164,25 +146,17 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
                         include=["documents", "metadatas", "distances"],
                     )
                 except Exception:
-                    # If collection API differs or query fails, skip gracefully
                     continue
 
-                # defensive extraction from chroma-like return values
                 docs2 = raw.get("documents", [[]])[0] if raw.get("documents") else []
                 metas2 = raw.get("metadatas", [[]])[0] if raw.get("metadatas") else []
                 dists2 = raw.get("distances", [[]])[0] if raw.get("distances") else [0.0] * len(docs2)
 
-                # iterate through results and accept ones that look like the symbol
                 for d2, m2, di2 in zip(docs2, metas2, dists2):
-                    # repo filter
                     if repo_name and m2.get("repo") != repo_name:
                         continue
-
-                    # prefer entries that actually match the symbol name/qualified
                     if not _meta_matches_symbol(m2, sym):
-                        # skip if it's a file chunk or name mismatch
                         continue
-
                     k = key_of(m2)
                     if k in seen:
                         continue
@@ -195,11 +169,58 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
 
     return expanded
 
+# ----------------------------------
+# RERANKER
+# ----------------------------------
+
+from sentence_transformers import CrossEncoder
+
+class Reranker:
+    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        self.model_name = model_name
+        self.device = None
+        self.model = None
+        self._load()
+
+    def _load(self):
+        print("[RERANKER] Initializing cross-encoder...")
+        try:
+            self.model = CrossEncoder(self.model_name, device="cuda")
+            self.device = "cuda"
+        except Exception as e:
+            print("CUDA load failed, falling back to CPU:", e)
+            self.model = CrossEncoder(self.model_name, device="cpu")
+            self.device = "cpu"
+
+    def score(self, query, doc):
+        return self.score_batch(query, [doc])[0]
+
+    def score_batch(self, query, docs, batch_size=8):
+        pairs = [[query, d] for d in docs]
+        try:
+            return self.model.predict(pairs, batch_size=batch_size)
+        except RuntimeError as e:
+            if "CUDA out of memory" in str(e):
+                print("CUDA OOM during scoring — switching reranker to CPU")
+                self.model = CrossEncoder(self.model_name, device="cpu")
+                self.device = "cpu"
+                return self.model.predict(pairs, batch_size=batch_size)
+            raise e
+
+def _ensure_reranker():
+    global _RERANKER
+    if _RERANKER is None:
+        print("[RERANKER] Creating new reranker instance...")
+        _RERANKER = Reranker()
+    else:
+        print(f"[RERANKER] Reusing existing reranker on { _RERANKER.device }")
+    return _RERANKER
 
 # ----------------------------------
-# Main Search
+# MAIN SEARCH
 # ----------------------------------
-def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
+
+def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_reranker=True):
     refined = _REWRITER.rewrite(query)
 
     print("\n--------------------------------------")
@@ -207,13 +228,11 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
     print("Refined Query :", refined)
     print("--------------------------------------\n")
 
-    # Step 1: Dense embedding for the user query
     q_emb = _EMBEDDER.embed([refined])
 
     client = chromadb.PersistentClient(path=".chromadb")
     col = client.get_collection("kernelmind_index")
 
-    # Step 2: coarse dense retrieval
     n_candidates = max(k * CANDIDATE_MULTIPLIER, k + 10)
     try:
         raw = col.query(
@@ -225,12 +244,10 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
         print("Chroma dense query failed:", e)
         return None
 
-    # defensive extraction
     docs = raw.get("documents", [[]])[0] if raw.get("documents") else []
     metas = raw.get("metadatas", [[]])[0] if raw.get("metadatas") else []
     dists = raw.get("distances", [[]])[0] if raw.get("distances") else [0.0] * len(docs)
 
-    # Step 3: initial filtering
     candidates = []
     for doc, meta, dist in zip(docs, metas, dists):
         if repo_name and meta.get("repo") != repo_name:
@@ -244,14 +261,10 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
         pretty(docs[:k], metas[:k], dists[:k])
         return None
 
-    # Step 4: call-chain expansion (use top-k as seeds)
     initial = [(c["doc"], c["meta"], c["dist"]) for c in candidates[:k]]
     expanded = expand_call_chain(initial, repo_name, col, depth=2, per_symbol=6)
-
-    # If expansion returned nothing, fall back to seeds
     merged = expanded if expanded else initial
 
-    # Step 5: re-rank expanded set with BM25 + normalized dense similarity
     docs2 = [t[0] for t in merged]
     metas2 = [t[1] for t in merged]
     dists2 = [float(t[2]) for t in merged]
@@ -260,13 +273,11 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
         print("No documents to rank after expansion.")
         return None
 
-    # BM25
     corpus_tokens = [tokenize(d) for d in docs2]
     bm25 = BM25Okapi(corpus_tokens)
     q_tokens = tokenize(refined)
     bm25_scores = bm25.get_scores(q_tokens)
 
-    # Normalize dense similarity
     if dists2:
         min_d, max_d = min(dists2), max(dists2)
     else:
@@ -277,12 +288,10 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
     else:
         chroma_sim = [(max_d - d) / (max_d - min_d) for d in dists2]
 
-    # Normalize BM25 (safe)
     max_bm = max(bm25_scores) if len(bm25_scores) else 1.0
     bm25_norm = [s / max_bm for s in bm25_scores]
 
-    # Combine + type/domain boosts
-    combined = []
+    base_scores = []
     for i, _ in enumerate(merged):
         base = 0.6 * chroma_sim[i] + 0.4 * bm25_norm[i]
         t = metas2[i].get("type")
@@ -298,23 +307,56 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
             domain += 0.08
 
         score = base + boost + domain
-        combined.append((score, i))
+        base_scores.append(score)
 
-    combined.sort(key=lambda x: x[0], reverse=True)
-    top_indices = [i for (_, i) in combined[:k]]
+    def _normalize_list(values: List[float]) -> List[float]:
+        if values is None or len(values) == 0:
+            return []
+        mn, mx = min(values), max(values)
+        if abs(mx - mn) < 1e-9:
+            return [1.0] * len(values)
+        return [(v - mn) / (mx - mn) for v in values]
+
+    base_norm = _normalize_list(base_scores)
+
+    rerank_scores = None
+    if use_reranker:
+        try:
+            print(f"[RERANKER] Running reranker on {len(docs2)} chunks...")
+            rer = _ensure_reranker()
+            print(f"[RERANKER] Device = {rer.device}")
+            text_chunks = [f"{m.get('qualified_name') or ''} -- {d}" for d, m in zip(docs2, metas2)]
+            rerank_scores = rer.score_batch(refined, text_chunks, batch_size=8)
+        except Exception as e:
+            print("Reranker failed to initialize/score:", e)
+            rerank_scores = None
+
+    # Fix: avoid ambiguous truth-value check
+    has_rerank = rerank_scores is not None and len(rerank_scores) > 0
+
+    final_scores = []
+    if has_rerank:
+        rer_norm = _normalize_list(rerank_scores)
+        for i in range(len(merged)):
+            final = 0.75 * rer_norm[i] + 0.25 * base_norm[i]
+            final_scores.append((final, i))
+    else:
+        for i in range(len(merged)):
+            final_scores.append((base_norm[i], i))
+
+    final_scores.sort(key=lambda x: x[0], reverse=True)
+    top_indices = [i for (_, i) in final_scores[:k]]
 
     final_docs = [docs2[i] for i in top_indices]
     final_metas = [metas2[i] for i in top_indices]
     final_dists = [dists2[i] for i in top_indices]
 
-    # print("\n=== Retrieved Chunks (Top-k) ===")
     if show_chunks:
         pretty(final_docs, final_metas, final_dists)
 
     if not synthesize:
         return None
 
-    # Build chunk objects for synthesis
     chunk_objs = []
     for text, meta in zip(final_docs, final_metas):
         chunk_objs.append({
@@ -326,13 +368,10 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False):
             "type": meta.get("type"),
         })
 
-    # print("\n=== Synthesizing Answer with Gemma2 ===\n")
     answer = synthesize_answer(query, chunk_objs)
     print(answer)
     return answer
 
-
-# CLI entrypoint (keeps previous behavior)
 if __name__ == "__main__":
     import sys
     q = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else input("Query: ")
