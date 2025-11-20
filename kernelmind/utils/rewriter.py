@@ -10,7 +10,7 @@ class QueryRewriter:
         prompt = f"""
 Rewrite this query into a precise technical question for source-code retrieval.
 
-Keep it short, keep it focused on relevant functions, modules, or classes.
+Keep it short, keep it focused on relevant functions, modules, or classes. Only return this refined query, nothing else
 
 Query: "{query}"
 

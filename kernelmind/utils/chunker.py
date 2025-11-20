@@ -4,8 +4,10 @@ def load_file_lines(absolute_path):
     with open(absolute_path, "r", encoding="utf-8") as f:
         return f.readlines()
 
+
 def extract_chunk(text_lines, start, end):
-    return "".join(text_lines[start-1:end])
+    return "".join(text_lines[start - 1:end])
+
 
 def build_text_chunks(context_pack, repo_root):
     file_path = context_pack["file"]["path"]
@@ -22,7 +24,10 @@ def build_text_chunks(context_pack, repo_root):
         "type": "file",
         "path": file_path,
         "name": os.path.basename(file_path),
+        "qualified_name": os.path.basename(file_path),
         "repo": repo,
+        "start": 1,
+        "end": len(lines),
         "text": "".join(lines)
     })
 
@@ -34,11 +39,14 @@ def build_text_chunks(context_pack, repo_root):
         end = fn["end_line"]
         source = extract_chunk(lines, start, end)
 
+        q = fn.get("qualified_name", fn["name"])
+
         text = (
-            f"# File: {file_path}\n"
-            f"# Function: {fn['name']}\n"
-            f"# Args: {', '.join(fn['args'])}\n"
-            f"# Lines: {start}-{end}\n\n"
+            f"# file: {file_path}\n"
+            f"# function: {fn['name']}\n"
+            f"# qualified: {q}\n"
+            f"# args: {', '.join(fn.get('args', []))}\n"
+            f"# lines: {start}-{end}\n\n"
             f"{source}"
         )
 
@@ -46,9 +54,12 @@ def build_text_chunks(context_pack, repo_root):
             "type": "function",
             "path": file_path,
             "name": fn["name"],
-            "args": fn["args"],
+            "qualified_name": q,
+            "args": fn.get("args", []),
             "repo": repo,
-            "text": text.lower()  # optional: improves lexical BM25
+            "start": start,
+            "end": end,
+            "text": text
         })
 
     # ----------------------------------
@@ -59,10 +70,13 @@ def build_text_chunks(context_pack, repo_root):
         end = cls["end_line"]
         source = extract_chunk(lines, start, end)
 
+        q = cls.get("qualified_name", cls.get("name", ""))
+
         text = (
-            f"# File: {file_path}\n"
-            f"# Class: {cls['name']}\n"
-            f"# Lines: {start}-{end}\n\n"
+            f"# file: {file_path}\n"
+            f"# class: {cls['name']}\n"
+            f"# qualified: {q}\n"
+            f"# lines: {start}-{end}\n\n"
             f"{source}"
         )
 
@@ -70,8 +84,11 @@ def build_text_chunks(context_pack, repo_root):
             "type": "class",
             "path": file_path,
             "name": cls["name"],
+            "qualified_name": q,
             "repo": repo,
-            "text": text.lower()
+            "start": start,
+            "end": end,
+            "text": text
         })
 
     # ----------------------------------
@@ -82,12 +99,15 @@ def build_text_chunks(context_pack, repo_root):
         end = m["end_line"]
         source = extract_chunk(lines, start, end)
 
+        q = m.get("qualified_name", f"{m.get('class','')}.{m['name']}")
+
         text = (
-            f"# File: {file_path}\n"
-            f"# Class: {m['class']}\n"
-            f"# Method: {m['name']}\n"
-            f"# Args: {', '.join(m['args'])}\n"
-            f"# Lines: {start}-{end}\n\n"
+            f"# file: {file_path}\n"
+            f"# class: {m.get('class','')}\n"
+            f"# method: {m['name']}\n"
+            f"# qualified: {q}\n"
+            f"# args: {', '.join(m.get('args', []))}\n"
+            f"# lines: {start}-{end}\n\n"
             f"{source}"
         )
 
@@ -95,10 +115,13 @@ def build_text_chunks(context_pack, repo_root):
             "type": "method",
             "path": file_path,
             "name": m["name"],
-            "class": m["class"],
-            "args": m["args"],
+            "qualified_name": q,
+            "class": m.get("class", ""),
+            "args": m.get("args", []),
             "repo": repo,
-            "text": text.lower()
+            "start": start,
+            "end": end,
+            "text": text
         })
 
     return chunks

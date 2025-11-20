@@ -18,11 +18,7 @@ def parse_python(path: str) -> Dict[str, Any]:
         tree = ast.parse(src)
     except SyntaxError:
         return {
-            "file": {
-                "path": path,
-                "hash": file_hash,
-                "error": "syntax error"
-            },
+            "file": {"path": path, "hash": file_hash, "error": "syntax error"},
             "imports": [],
             "functions": [],
             "classes": [],
@@ -32,15 +28,6 @@ def parse_python(path: str) -> Dict[str, Any]:
     imports = extract_imports(tree)
     functions = extract_functions(tree)
     classes, methods = extract_classes_and_methods(tree)
-
-    for fn in functions:
-        fn["path"] = path
-
-    for cls in classes:
-        cls["path"] = path
-
-    for m in methods:
-        m["path"] = path
 
     return {
         "file": {
@@ -73,8 +60,8 @@ def extract_functions(tree: ast.AST) -> List[Dict[str, Any]]:
         if isinstance(node, ast.FunctionDef):
             funcs.append({
                 "name": node.name,
+                "qualified_name": node.name,
                 "args": [arg.arg for arg in node.args.args],
-                "docstring": ast.get_docstring(node),
                 "start_line": node.lineno,
                 "end_line": node.end_lineno,
             })
@@ -89,7 +76,7 @@ def extract_classes_and_methods(tree: ast.AST):
         if isinstance(node, ast.ClassDef):
             classes.append({
                 "name": node.name,
-                "docstring": ast.get_docstring(node),
+                "qualified_name": node.name,
                 "start_line": node.lineno,
                 "end_line": node.end_lineno,
             })
@@ -98,9 +85,9 @@ def extract_classes_and_methods(tree: ast.AST):
                 if isinstance(n, ast.FunctionDef):
                     methods.append({
                         "name": n.name,
+                        "qualified_name": f"{node.name}.{n.name}",
                         "class": node.name,
                         "args": [arg.arg for arg in n.args.args],
-                        "docstring": ast.get_docstring(n),
                         "start_line": n.lineno,
                         "end_line": n.end_lineno,
                     })

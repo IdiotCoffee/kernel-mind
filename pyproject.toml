@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kernelmind"
+version = "0.0.1"
+requires-python = ">=3.8"
+description = "KernelMind local AI code search"
+
+[tool.setuptools.packages.find]
+include = ["kernelmind"]
+exclude = ["repos*", "parsers*", "ingestion*", "embeddings*", "vector_store*"]
+
+[project.scripts]
+kernelmind = "kernelmind.cli:cli"
