@@ -1,96 +1,176 @@
 import ollama
+import json
+import re
 
-# ===============================
-#  STRICT TEMPLATE
-# ===============================
-SYNTHESIS_TEMPLATE = """
-You are a strict code-grounded summarizer for senior engineers.
-You will produce a short, precise, fully-grounded answer that uses ONLY the code in === SOURCE CODE START === / === SOURCE CODE END ===.
+# ======================================================
+#  CONFIG
+# ======================================================
+DEFAULT_MODEL = "deepseek-coder-v2:lite"
 
-INPUT:
-Question:
-[QUESTION]
+# summary generation constraints
+SUMMARY_CHUNK_LIMIT = 30
+SUMMARY_MAX_TOKENS = 1024
+SYNTHESIS_MAX_TOKENS = 5500
+DEFAULT_TEMPERATURE = 0.1
 
-Source chunks:
-[CHUNKS]
 
-INVARIANT RULES (must obey exactly):
-1) Use only the code in [CHUNKS]. If the answer cannot be found exactly in those chunks, output exactly the single line:
-   Not found in retrieved code.
-   and stop (no extra text).
-2) Every factual statement must end with a citation in this exact format:
-   (file: <path>, <symbol>, lines <start>–<end>)
-3) Do not use speculative language. Forbidden: likely, probably, might, maybe, generally, usually, often.
-4) No repetition. Each sentence must be unique.
-5) Never invent code or behavior not explicitly present.
-6) Do not quote code unless it appears verbatim in the chunks.
-7) Output MUST be plain text. No markdown fences.
+# ======================================================
+#  HELPERS
+# ======================================================
 
-OUTPUT FORMAT:
-1) One-line summary sentence (ends with citation).
-2) Numbered explanation steps (1–N). Each sentence must end with a citation.
-3) No conclusion, no extra sections.
+def _strip(text):
+    """Remove accidental backticks or code fences."""
+    if not text:
+        return text
+    text = re.sub(r"^```(?:\w+)?\n", "", text)
+    text = re.sub(r"\n```$", "", text)
+    return text.strip().strip("`").strip()
 
-Begin now.
-"""
 
-# ===============================
-#  Chunk formatting utilities
-# ===============================
+# ======================================================
+#  PROMPTS
+# ======================================================
 
-def format_chunks(chunks):
-    """
-    chunks: list of dicts with fields:
-        text, path, start, end
-    """
+SUMMARY_PROMPT = """
+YOU ARE TRYING TO FIND AND SUMMARIZE INFORMATION IN THE CHUNK PERTAINING TO THIS QUERY: {query}
+------------------------------------------------------------
+Rules:
+- No explanations or interpretation beyond what the chunk literally shows.
+- No assumptions about behavior not visible in the snippet.
+- Identify the key operations, key functions/methods called, and key data structures touched.
+- Keep summary AS SHORT AS YOU CAN WITHOUT REMOVING ANY DETAILS.
+- EVEN IF the chunk below is large, mention ALL the functions used, and their usage summary in 2 sentences MINIMUM.
+- MENTION ALL THE FUNCTIONS / METHODS / CLASSES that are being used, and the flow that is evident from the given information ONLY.
+- CRITICAL: DO NOT make up your own logic for explaining the chunk. What is given in the chunk is your ONE SOURCE OF TRUTH.
+Chunk:
+path: {path}
+qualified: {qualified}
+type: {ctype}
+lines: {start}-{end}
+
+Code:
+{code}"""
+
+SYNTHESIS_PROMPT = """
+You are an expert code-reasoning assistant.
+Your job is to resolve this query with a precise, technically confident explanation that sounds like someone who has actually traced the code path. The answer should be concise but show real understanding of how the mechanisms work.
+QUERY:
+{query}
+
+CONTEXT (summaries of relevant code chunks):
+{summaries}
+
+RULES:
+Use only the RELEVANT information from the summaries - DO NOT ADD THE INFORMATION THAT DOES NOT HELP ANSWER THE QUERY.
+ADD INFORMATION THAT ADDS MORE CONTEXT TO THE DIRECT ANSWER, EVEN IF IT DOES NOT DIRECTLY ANSWER THE QUERY.
+If the summaries do not contain enough information, say:
+The retrieved code does not contain the answer.
+CRITICAL: DO NOT make up your own information / nagate the information given in the summarries.
+Your answer must follow this structure:
+A short, crisp explanation (3–6 sentences) that shows clear understanding of how the code achieves the behavior.
+A “Key Points” section with 3–6 bullets. Each bullet must:
+Reference the actual mechanism in the summaries
+Show priority/order/merge logic when relevant
+End with (chunk N).
+
+Tone:
+Confident, clear, technically aware.
+Not verbose, not hand-wavy.
+Assume the reader is preparing for a technical interview."""
+
+
+# ======================================================
+#  CHUNK SUMMARIZATION
+# ======================================================
+
+def summarize_chunk(chunk, query, model="gemma2:9b"):
+    prompt = SUMMARY_PROMPT.format(
+        query=query,
+        path=chunk.get("path"),
+        qualified=chunk.get("qualified_name"),
+        ctype=chunk.get("type"),
+        start=chunk.get("start"),
+        end=chunk.get("end"),
+        code=chunk.get("text"),
+    )
+    # print(prompt)
+    try:
+        resp = ollama.generate(
+            model=model,
+            prompt=prompt,
+            options={"temperature": 0, "max_tokens": SUMMARY_MAX_TOKENS},
+        )
+        clean = resp.get("response", "").strip()
+        # print(clean)
+        if clean:
+            return clean
+    except:
+        pass
+    return chunk
+
+  
+def summarize_chunks(chunks, query, model=DEFAULT_MODEL):
+    """Summarize up to SUMMARY_CHUNK_LIMIT chunks."""
     out = []
-    for c in chunks:
-        path = c.get("path", "unknown")
-        start = c.get("start", "?")
-        end = c.get("end", "?")
+    for i, c in enumerate(chunks[:SUMMARY_CHUNK_LIMIT], 1):
+        s = summarize_chunk(c, query)
+        out.append({
+            "index": i,
+            "summary": s,
+            "text": c.get("text"),
+            "path": c.get("path"),
+            "type": c.get("type"),
+            "start": c.get("start"),
+            "end": c.get("end"),
+            "qualified_name": c.get("qualified_name"),
+        })
+    # print(out)
+    return out
 
-        header = f"--- File: {path} ({start}–{end}) ---"
-        out.append(header)
-        out.append(c["text"])
-        out.append("")  # blank line for readability
 
+def _summaries_block(sums):
+    lines = []
+    for s in sums:
+        lines.append(
+            f"({s['index']}) {s['path']}:{s['start']}-{s['end']} — {s['summary']}"
+        )
+    return "\n".join(lines)
+
+
+def _chunks_block(sums):
+    out = []
+    for s in sums:
+        body = s["text"]
+        if len(body) > 5000:
+            body = body[:5000] + " ...<truncated>..."
+        out.append(
+            f"({s['index']}) {s['path']}:{s['start']}-{s['end']}\n{body}\n"
+        )
     return "\n".join(out)
 
 
-def build_prompt(query, chunks):
-    """
-    Takes user query + chunk list → builds the full prompt sent to Gemma.
-    """
-    formatted = format_chunks(chunks)
-    prompt = SYNTHESIS_TEMPLATE.replace("[QUESTION]", query)
-    prompt = prompt.replace("[CHUNKS]", formatted)
-    return prompt
+# ======================================================
+#  FINAL SYNTHESIS — NO CLASSIFIER — ONLY SUMMARIES → ANSWER
+# ======================================================
 
+def synthesize_answer(query, chunks, model="gemma2:9b"):
+    if not chunks:
+        return "The retrieved code does not contain the answer."
 
-# ===============================
-#  Synthesis (Gemma)
-# ===============================
+    # Step 1: summarization
+    summaries = summarize_chunks(chunks, query, model)
 
-def synthesize_answer(query: str, chunks: list, model: str = "gemma2:9b"):
-    """
-    Uses Gemma through Ollama to synthesize a grounded explanation.
-    - deterministic output (temperature 0)
-    - no hallucinations
-    - inline citations enforced
-    """
-    prompt = build_prompt(query, chunks)
-
-    response = ollama.generate(
+    # Step 2: synthesis
+    prompt = SYNTHESIS_PROMPT.format(
+        query=query,
+        summaries=_summaries_block(summaries),
+    )
+    #print(prompt)
+    resp = ollama.generate(
         model=model,
         prompt=prompt,
-        options={
-            "temperature": 0.2,
-            "top_p": 1.0,
-            "max_tokens": 4096,
-        },
+        options={"temperature": 0.1, "max_tokens": SYNTHESIS_MAX_TOKENS},
     )
 
-    return response.get("response", "").strip()
+    return _strip(resp.get("response", ""))
 
-
-__all__ = ["synthesize_answer"]

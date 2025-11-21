@@ -18,20 +18,6 @@ def build_text_chunks(context_pack, repo_root):
     chunks = []
 
     # ----------------------------------
-    # File-level chunk
-    # ----------------------------------
-    chunks.append({
-        "type": "file",
-        "path": file_path,
-        "name": os.path.basename(file_path),
-        "qualified_name": os.path.basename(file_path),
-        "repo": repo,
-        "start": 1,
-        "end": len(lines),
-        "text": "".join(lines)
-    })
-
-    # ----------------------------------
     # Functions
     # ----------------------------------
     for fn in context_pack["functions"]:
