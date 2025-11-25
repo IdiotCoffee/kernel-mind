@@ -369,7 +369,6 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
         })
 
     answer = synthesize_answer(query, chunk_objs)
-    print(answer)
     return answer
 
 if __name__ == "__main__":

@@ -5,13 +5,13 @@ import re
 # ======================================================
 #  CONFIG
 # ======================================================
-DEFAULT_MODEL = "deepseek-coder-v2:lite"
+DEFAULT_MODEL = "qwen2.5-coder:14b"
 
 # summary generation constraints
 SUMMARY_CHUNK_LIMIT = 30
 SUMMARY_MAX_TOKENS = 1024
 SYNTHESIS_MAX_TOKENS = 5500
-DEFAULT_TEMPERATURE = 0.1
+DEFAULT_TEMPERATURE = 0
 
 
 # ======================================================
@@ -42,6 +42,7 @@ Rules:
 - EVEN IF the chunk below is large, mention ALL the functions used, and their usage summary in 2 sentences MINIMUM.
 - MENTION ALL THE FUNCTIONS / METHODS / CLASSES that are being used, and the flow that is evident from the given information ONLY.
 - CRITICAL: DO NOT make up your own logic for explaining the chunk. What is given in the chunk is your ONE SOURCE OF TRUTH.
+- CRITICAL: When you summarize the chunk, use the file and line range format exactly like this: (src/requests/sessions.py:500-591).
 Chunk:
 path: {path}
 qualified: {qualified}
@@ -71,7 +72,7 @@ A short, crisp explanation (3–6 sentences) that shows clear understanding of h
 A “Key Points” section with 3–6 bullets. Each bullet must:
 Reference the actual mechanism in the summaries
 Show priority/order/merge logic when relevant
-End with (chunk N).
+Whenever you cite support, STRICTLY use the file and line range format exactly like this: (src/requests/sessions.py:500-591).
 
 Tone:
 Confident, clear, technically aware.
@@ -83,7 +84,7 @@ Assume the reader is preparing for a technical interview."""
 #  CHUNK SUMMARIZATION
 # ======================================================
 
-def summarize_chunk(chunk, query, model="gemma2:9b"):
+def summarize_chunk(chunk, query, model=DEFAULT_MODEL):
     prompt = SUMMARY_PROMPT.format(
         query=query,
         path=chunk.get("path"),
@@ -137,6 +138,12 @@ def _summaries_block(sums):
     return "\n".join(lines)
 
 
+def _remove_full_duplication(text):
+    half = len(text) // 2
+    if text[:half].strip() == text[half:].strip():
+        return text[:half].strip()
+    return text
+
 def _chunks_block(sums):
     out = []
     for s in sums:
@@ -153,7 +160,7 @@ def _chunks_block(sums):
 #  FINAL SYNTHESIS — NO CLASSIFIER — ONLY SUMMARIES → ANSWER
 # ======================================================
 
-def synthesize_answer(query, chunks, model="gemma2:9b"):
+def synthesize_answer(query, chunks, model=DEFAULT_MODEL):
     if not chunks:
         return "The retrieved code does not contain the answer."
 
@@ -169,8 +176,10 @@ def synthesize_answer(query, chunks, model="gemma2:9b"):
     resp = ollama.generate(
         model=model,
         prompt=prompt,
-        options={"temperature": 0.1, "max_tokens": SYNTHESIS_MAX_TOKENS},
+        options={"temperature": DEFAULT_TEMPERATURE, "max_tokens": SYNTHESIS_MAX_TOKENS},
     )
 
-    return _strip(resp.get("response", ""))
-
+    raw = _strip(resp.get("response", ""))
+    # run dedupe cleaners
+    clean = _remove_full_duplication(raw)
+    return clean

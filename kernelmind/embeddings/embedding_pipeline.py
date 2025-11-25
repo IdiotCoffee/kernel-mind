@@ -9,7 +9,9 @@ class EmbeddingPipeline:
         self.store = VectorStore()
 
     def _chunk_id(self, repo, chunk, index):
-        return f"{repo}:{chunk['path']}:{chunk['qualified_name']}:{index}"
+        q = chunk.get("qualified_name") or chunk.get("name") or "file"
+        return f"{repo}:{chunk['path']}:{q}:{index}"
+
 
     def _chunk_hash(self, chunk):
         return hashlib.sha256(chunk["text"].encode()).hexdigest()
