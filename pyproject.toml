@@ -14,3 +14,4 @@ exclude = ["repos*", "parsers*", "ingestion*", "embeddings*", "vector_store*"]
 
 [project.scripts]
 kernelmind = "kernelmind.cli:cli"
+km = "kernelmind.cli:cli"

@@ -115,5 +115,9 @@ def answer(question, k, repo):
         click.echo(result)
 
 
+# register command aliases
+cli.add_command(ingest, "i")
+cli.add_command(search, "s")
+cli.add_command(answer, "a")
 if __name__ == "__main__":
     cli()
