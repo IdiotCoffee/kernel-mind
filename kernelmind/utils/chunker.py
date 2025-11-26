@@ -21,26 +21,26 @@ def build_text_chunks(context_pack, repo_root):
     # ----------------------------------
     # File-level chunk
     # ----------------------------------
-    # start = 1
-    # end = len(lines)
-    # source = extract_chunk(lines, start, end)
-    #
-    # text = (
-    #     f"# file: {file_path}\n"
-    #     f"# type: file\n"
-    #     f"# lines: {start}-{end}\n\n"
-    #     f"{source}"
-    # )
-    #
-    # chunks.append({
-    #     "type": "file",
-    #     "path": file_path,
-    #     "repo": repo,
-    #     "start": start,
-    #     "end": end,
-    #     "text": text
-    # })
-    #
+    start = 1
+    end = len(lines)
+    source = extract_chunk(lines, start, end)
+
+    text = (
+        f"# file: {file_path}\n"
+        f"# type: file\n"
+        f"# lines: {start}-{end}\n\n"
+        f"{source}"
+    )
+
+    chunks.append({
+        "type": "file",
+        "path": file_path,
+        "repo": repo,
+        "start": start,
+        "end": end,
+        "text": text
+    })
+
     # ----------------------------------
     # Functions
     # ----------------------------------
