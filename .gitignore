@@ -21,3 +21,7 @@ repos/
 
 # Chroma DB database
 .chromadb/
+
+# node
+node_modules/
+package-lock.json

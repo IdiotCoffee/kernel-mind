@@ -1,5 +1,5 @@
 annotated-types==0.7.0
-anyio==4.11.0
+anyio==4.12.0
 attrs==25.4.0
 backoff==2.2.1
 bcrypt==5.0.0
@@ -15,7 +15,7 @@ dnspython==2.8.0
 durationpy==0.10
 filelock==3.20.0
 flatbuffers==25.9.23
-fsspec==2025.10.0
+fsspec==2025.12.0
 google-auth==2.43.0
 googleapis-common-protos==1.72.0
 grpcio==1.76.0
@@ -33,14 +33,14 @@ Jinja2==3.1.6
 joblib==1.5.2
 jsonschema==4.25.1
 jsonschema-specifications==2025.9.1
--e git+https://github.com/IdiotCoffee/kernel-mind.git@f8821af19b29bd8471959ea916d0a70912067f2f#egg=kernelmind
+-e git+https://github.com/IdiotCoffee/kernel-mind.git@be41f61783c43c3b82d93371469d2082797eb107#egg=kernelmind
 kubernetes==34.1.0
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 mmh3==5.2.0
 mpmath==1.3.0
-networkx==3.5
+networkx==3.6
 numpy==2.3.5
 nvidia-cublas-cu12==12.8.4.1
 nvidia-cuda-cupti-cu12==12.8.90
@@ -60,12 +60,12 @@ nvidia-nvtx-cu12==12.8.90
 oauthlib==3.3.1
 ollama==0.6.1
 onnxruntime==1.23.2
-opentelemetry-api==1.38.0
-opentelemetry-exporter-otlp-proto-common==1.38.0
-opentelemetry-exporter-otlp-proto-grpc==1.38.0
-opentelemetry-proto==1.38.0
-opentelemetry-sdk==1.38.0
-opentelemetry-semantic-conventions==0.59b0
+opentelemetry-api==1.39.0
+opentelemetry-exporter-otlp-proto-common==1.39.0
+opentelemetry-exporter-otlp-proto-grpc==1.39.0
+opentelemetry-proto==1.39.0
+opentelemetry-sdk==1.39.0
+opentelemetry-semantic-conventions==0.60b0
 orjson==3.11.4
 overrides==7.7.0
 packaging==25.0
@@ -75,10 +75,10 @@ protobuf==6.33.1
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
 pybase64==1.4.2
-pydantic==2.12.4
+pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
-pymongo==4.15.4
+pymongo==4.15.5
 PyPika==0.48.9
 pyproject_hooks==1.2.0
 python-dateutil==2.9.0.post0
@@ -90,7 +90,7 @@ regex==2025.11.3
 requests==2.32.5
 requests-oauthlib==2.0.0
 rich==14.2.0
-rpds-py==0.29.0
+rpds-py==0.30.0
 rsa==4.9.1
 safetensors==0.7.0
 scikit-learn==1.7.2
@@ -99,14 +99,13 @@ sentence-transformers==5.1.2
 setuptools==80.9.0
 shellingham==1.5.4
 six==1.17.0
-sniffio==1.3.1
 sympy==1.14.0
 tenacity==9.1.2
 threadpoolctl==3.6.0
 tokenizers==0.22.1
 torch==2.9.1
 tqdm==4.67.1
-transformers==4.57.1
+transformers==4.57.3
 triton==3.5.1
 typer==0.20.0
 typing-inspection==0.4.2
@@ -117,4 +116,5 @@ uvloop==0.22.1
 watchfiles==1.1.1
 websocket-client==1.9.0
 websockets==15.0.1
+wheel==0.45.1
 zipp==3.23.0

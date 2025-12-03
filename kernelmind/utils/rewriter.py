@@ -4,7 +4,7 @@ from ollama import Client
 class QueryRewriter:
     def __init__(self):
         self.client = Client(host="http://localhost:11434")
-        self.model = "gemma2:9b"
+        self.model = "qwen2.5-coder:14b"
 
     def rewrite(self, query: str) -> str:
         prompt = f"""

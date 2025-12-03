@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 kernelmind/__init__.py
 kernelmind/cli.py

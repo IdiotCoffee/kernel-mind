@@ -1,0 +1,24 @@
+{
+  "name": "kernel-mind",
+  "version": "1.0.0",
+  "description": "KernelMind is a local, code-aware retrieval and reasoning engine for navigating and understanding large codebases.   It works entirely from the command line, uses a hybrid retrieval pipeline (BM25 + embeddings + type-based boosts), and synthesizes final answers using a locally-hosted Qwen 2.5 Coder 14B model.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IdiotCoffee/kernel-mind.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/IdiotCoffee/kernel-mind/issues"
+  },
+  "homepage": "https://github.com/IdiotCoffee/kernel-mind#readme",
+  "dependencies": {
+    "@babel/parser": "^7.28.5"
+  }
+}
