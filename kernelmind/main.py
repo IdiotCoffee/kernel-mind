@@ -3,7 +3,10 @@ from kernelmind.ingestion.downloader import download_and_extract
 from kernelmind.ingestion.crawler import crawl_repo
 
 from kernelmind.parsers.python_parser import parse_python
-from kernelmind.parsers.js_parser import parse_javascript   # <-- NEW
+from kernelmind.parsers.js_parser import parse_javascript
+from kernelmind.parsers.json_parser import parse_json
+from kernelmind.parsers.yaml_parser import parse_yaml
+
 
 from kernelmind.utils.mongo_store import save_parsed_output
 from kernelmind.utils.context_builder import build_context_pack
@@ -47,10 +50,16 @@ if __name__ == "__main__":
     py_files  = [f for f in files if f.endswith(".py")]
     js_files  = [f for f in files if f.endswith((".js", ".jsx"))]
     ts_files  = [f for f in files if f.endswith((".ts", ".tsx"))]
+    json_files = [f for f in files if f.endswith(".json")]
+    yaml_files = [f for f in files if f.endswith((".yaml", ".yml"))]
+
 
     print(f"{len(py_files)} Python files")
     print(f"{len(js_files)} JavaScript files")
     print(f"{len(ts_files)} TypeScript files\n")
+    print(f"{len(json_files)} JSON files")
+    print(f"{len(yaml_files)} YAML files\n")
+
 
     # ----------------------------------
     # 4. Parse & store AST
@@ -74,6 +83,19 @@ if __name__ == "__main__":
         print(f"[TS] {f}")
         parsed = parse_javascript(f)   # same parser handles TS
         save_parsed_output(parsed, repo_name, repo_root=path)
+    
+    # JSON
+    for f in json_files:
+        print(f"[JSON] {f}")
+        parsed = parse_json(f)
+        save_parsed_output(parsed, repo_name, repo_root=path)
+
+    # YAML
+    for f in yaml_files:
+        print(f"[YAML] {f}")
+        parsed = parse_yaml(f)
+        save_parsed_output(parsed, repo_name, repo_root=path)
+
 
     # ----------------------------------
     # 5. Embedding pipeline
@@ -85,7 +107,7 @@ if __name__ == "__main__":
     # ----------------------------------
     total_chunks = 0
 
-    all_code_files = py_files + js_files + ts_files
+    all_code_files = py_files + js_files + ts_files + json_files + yaml_files
 
     for f in all_code_files:
         logical_path = f.replace(path + "/", "")

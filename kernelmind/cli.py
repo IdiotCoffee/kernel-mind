@@ -5,7 +5,10 @@ from kernelmind.ingestion.downloader import download_and_extract
 from kernelmind.ingestion.crawler import crawl_repo
 
 from kernelmind.parsers.python_parser import parse_python
-from kernelmind.parsers.js_parser import parse_javascript          # <-- ADDED
+from kernelmind.parsers.js_parser import parse_javascript
+from kernelmind.parsers.json_parser import parse_json
+from kernelmind.parsers.yaml_parser import parse_yaml
+
 
 from kernelmind.utils.mongo_store import save_parsed_output
 from kernelmind.utils.context_builder import build_context_pack
@@ -45,10 +48,16 @@ def ingest(repo_url):
     py_files = [f for f in files if f.endswith(".py")]
     js_files = [f for f in files if f.endswith((".js", ".jsx"))]
     ts_files = [f for f in files if f.endswith((".ts", ".tsx"))]
+    json_files = [f for f in files if f.endswith(".json")]
+    yaml_files = [f for f in files if f.endswith((".yaml", ".yml"))]
+
 
     click.echo(f"Found {len(py_files)} Python files")
     click.echo(f"Found {len(js_files)} JavaScript files")
     click.echo(f"Found {len(ts_files)} TypeScript files")
+    click.echo(f"Found {len(json_files)} JSON files")
+    click.echo(f"Found {len(yaml_files)} YAML files")
+
 
     # --- parse & save AST data ---
     click.echo("\nParsing files...\n")
@@ -71,11 +80,23 @@ def ingest(repo_url):
         parsed = parse_javascript(f)
         save_parsed_output(parsed, repo_name, repo_root=path)
 
+    # JSON
+    for f in json_files:
+        click.echo(f"[JSON] {f}")
+        parsed = parse_json(f)
+        save_parsed_output(parsed, repo_name, repo_root=path)
+
+    # YAML
+    for f in yaml_files:
+        click.echo(f"[YAML] {f}")
+        parsed = parse_yaml(f)
+        save_parsed_output(parsed, repo_name, repo_root=path)
+
     # --- embedding ---
     pipeline = EmbeddingPipeline(backend="local")
     total_chunks = 0
 
-    all_code_files = py_files + js_files + ts_files
+    all_code_files = py_files + js_files + ts_files + json_files + yaml_files
 
     for f in all_code_files:
         logical_path = f.replace(path + "/", "")
