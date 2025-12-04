@@ -367,7 +367,7 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
             "qualified_name": meta.get("qualified_name"),
             "type": meta.get("type"),
         })
-
+    print("[RERANKER] Reranking done - Synthesizing answer")
     answer = synthesize_answer(query, chunk_objs)
     return answer
 
