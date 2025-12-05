@@ -165,7 +165,11 @@ def synthesize_answer(query, chunks, model=DEFAULT_MODEL):
         return "The retrieved code does not contain the answer."
 
     # Step 1: summarization
+    print(chunks)
+    print("-----------------------------------------------------------------")
     summaries = summarize_chunks(chunks, query, model)
+    print(summaries)
+    print("-----------------------------------------------------------------")
 
     # Step 2: synthesis
     prompt = SYNTHESIS_PROMPT.format(

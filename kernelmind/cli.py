@@ -10,7 +10,7 @@ from kernelmind.parsers.json_parser import parse_json
 from kernelmind.parsers.yaml_parser import parse_yaml
 
 
-from kernelmind.utils.mongo_store import save_parsed_output
+from kernelmind.utils.mongo_store import save_parsed_code, save_parsed_config
 from kernelmind.utils.context_builder import build_context_pack
 from kernelmind.utils.chunker import build_text_chunks
 from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
@@ -44,73 +44,91 @@ def ingest(repo_url):
 
     files = crawl_repo(path)
 
-    # --- language detection (same as main.py) ---
+    # --- language detection ---
     py_files = [f for f in files if f.endswith(".py")]
     js_files = [f for f in files if f.endswith((".js", ".jsx"))]
     ts_files = [f for f in files if f.endswith((".ts", ".tsx"))]
     json_files = [f for f in files if f.endswith(".json")]
     yaml_files = [f for f in files if f.endswith((".yaml", ".yml"))]
 
-
     click.echo(f"Found {len(py_files)} Python files")
-    click.echo(f"Found {len(js_files)} JavaScript files")
-    click.echo(f"Found {len(ts_files)} TypeScript files")
+    click.echo(f"Found {len(js_files)} JS files")
+    click.echo(f"Found {len(ts_files)} TS files")
     click.echo(f"Found {len(json_files)} JSON files")
     click.echo(f"Found {len(yaml_files)} YAML files")
 
-
-    # --- parse & save AST data ---
     click.echo("\nParsing files...\n")
 
-    # Python
+    # --- Parse & Store Code ---
     for f in py_files:
         click.echo(f"[PY] {f}")
-        parsed = parse_python(f)
-        save_parsed_output(parsed, repo_name, repo_root=path)
+        save_parsed_code(parse_python(f), repo_name, repo_root=path)
 
-    # JavaScript
     for f in js_files:
         click.echo(f"[JS] {f}")
-        parsed = parse_javascript(f)
-        save_parsed_output(parsed, repo_name, repo_root=path)
+        save_parsed_code(parse_javascript(f), repo_name, repo_root=path)
 
-    # TypeScript (same parser)
     for f in ts_files:
         click.echo(f"[TS] {f}")
-        parsed = parse_javascript(f)
-        save_parsed_output(parsed, repo_name, repo_root=path)
+        save_parsed_code(parse_javascript(f), repo_name, repo_root=path)
 
-    # JSON
+    # --- Parse & Store Config ---
     for f in json_files:
         click.echo(f"[JSON] {f}")
-        parsed = parse_json(f)
-        save_parsed_output(parsed, repo_name, repo_root=path)
+        save_parsed_config(parse_json(f), repo_name, repo_root=path)
 
-    # YAML
     for f in yaml_files:
         click.echo(f"[YAML] {f}")
-        parsed = parse_yaml(f)
-        save_parsed_output(parsed, repo_name, repo_root=path)
+        save_parsed_config(parse_yaml(f), repo_name, repo_root=path)
 
-    # --- embedding ---
+    # --- Embedding ---
+    from kernelmind.utils.config_chunker import build_config_chunks
+    from kernelmind.utils.mongo_store import db
+
     pipeline = EmbeddingPipeline(backend="local")
     total_chunks = 0
 
-    all_code_files = py_files + js_files + ts_files + json_files + yaml_files
+    # ---------- CODE CHUNKING ----------
+    code_files = py_files + js_files + ts_files
 
-    for f in all_code_files:
-        logical_path = f.replace(path + "/", "")
-        pack = build_context_pack(logical_path, repo_name)
+    for f in code_files:
+        logical = f.replace(path + "/", "")
+        pack = build_context_pack(logical, repo_name)
+
+        if not pack:
+            continue
+
         chunks = build_text_chunks(pack, repo_root=path)
 
         if chunks:
-            click.echo(f"Embedding {len(chunks)} chunks from {logical_path}")
+            click.echo(f"Embedding {len(chunks)} code chunks from {logical}")
+            pipeline.process(chunks, repo_name)
+            total_chunks += len(chunks)
+
+    # ---------- CONFIG CHUNKING ----------
+    config_files = json_files + yaml_files
+
+    for f in config_files:
+        logical = f.replace(path + "/", "")
+
+        # IMPORTANT: configs live in db.configs, not db.files
+        config_doc = db.configs.find_one({
+            "file": logical,
+            "repo": repo_name
+        })
+
+        if not config_doc:
+            continue
+
+        chunks = build_config_chunks(config_doc, repo=repo_name)
+
+        if chunks:
+            click.echo(f"Embedding {len(chunks)} config chunks from {logical}")
             pipeline.process(chunks, repo_name)
             total_chunks += len(chunks)
 
     click.echo(f"\nIngestion complete. Embedded {total_chunks} chunks.")
-    click.echo(f"You can now run:")
-    click.echo(f"    km s \"your query\" --repo {repo_name}")
+    click.echo(f"You can now run: km s \"your query\" --repo {repo_name}")
 
 
 # -----------------------
