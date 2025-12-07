@@ -11,7 +11,7 @@ def parse_yaml(path: str) -> Dict[str, Any]:
 
     try:
         data = yaml.safe_load(src)
-    except yaml.YAMLError as e:
+    except yaml.YAMLError:
         return {
             "file": {
                 "path": path,
@@ -26,7 +26,7 @@ def parse_yaml(path: str) -> Dict[str, Any]:
 
     keys = list(data.keys()) if isinstance(data, dict) else []
 
-    paths = []
+    paths: List[str] = []
     extract_paths(data, prefix="", out=paths)
 
     return {
@@ -43,17 +43,30 @@ def parse_yaml(path: str) -> Dict[str, Any]:
 
 
 def extract_paths(obj: Any, prefix: str, out: List[str]):
-    """Flatten nested keys for YAML configs."""
+    """
+    Flatten nested YAML structure into dot-separated paths.
+
+    Rules:
+    - Dict keys create paths
+    - Lists keep the same prefix and add []
+    - Scalars terminate recursion
+    """
+
+    # Dict: keys define structure
     if isinstance(obj, dict):
         for k, v in obj.items():
-            full = f"{prefix}.{k}" if prefix else k
+            key = str(k)
+            full = f"{prefix}.{key}" if prefix else key
             out.append(full)
             extract_paths(v, full, out)
+
+    # List: same prefix, mark as array
     elif isinstance(obj, list):
         if prefix:
-            out.append(prefix + "[]")
+            out.append(f"{prefix}[]")
         for v in obj:
             extract_paths(v, prefix, out)
+
+    # Scalars: stop
     else:
-        if prefix:
-            out.append(prefix)
+        return

@@ -49,6 +49,51 @@ KernelMind currently parses:
 Additional languages can be added by extending the chunking layer.
 
 ---
+### CLI Commands
+
+KernelMind includes a simple CLI for indexing repositories, searching, and answering questions.
+
+## 1. Index a Repository
+```
+km i <repo_url_or_path>
+```
+This downloads the repository (if needed), parses the code into structured chunks, 
+and indexes everything into Chroma with batching, metadata, and embeddings.
+
+Example:
+```
+km i https://github.com/tiangolo/full-stack-fastapi-template
+```
+## 2. Search the Indexed Code
+```
+km s <query> --repo <repo_name_and_branch>
+```
+Runs the multi-stage retrieval pipeline:
+- embeddings
+- BM25
+- type/domain boosts
+- symbol extraction
+- call-chain expansion
+- cross-encoder reranking
+
+Shows the top retrieved chunks with their metadata.
+
+Example:
+```
+km s "Where is the user token validated?" --repo full-stack-fastapi-template-master
+```
+
+## 3. Ask a Question (Full Pipeline)
+```
+km a <query> --repo <repo_name_and_branch>
+```
+Retrieves → reranks → summarizes → generates an answer using the local Qwen model.
+This is the main command for asking natural-language questions about the codebase.
+
+Example:
+```
+km a "How does the login route create the access token?" --repo full-stack-fastapi-template-master
+```
 ### Multi-Stage Retrieval (Detailed Overview)
 
 KernelMind doesn't depend on a single retrieval signal. Codebases contain structure, naming conventions, and interconnected logic, so the system combines several techniques to narrow down the most relevant pieces of code.
