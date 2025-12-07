@@ -25,3 +25,10 @@ repos/
 # node
 node_modules/
 package-lock.json
+
+# Python packaging
+*.egg-info/
+kernelmind.egg-info/
+dist/
+build/
+
