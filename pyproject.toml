@@ -10,7 +10,7 @@ requires-python = ">=3.9"
 description = "KernelMind: a self-hosted multi-stage code retrieval engine"
 readme = "README.md"
 
-# Minimal, clean dependency list for users
+# clean dependency list for users
 dependencies = [
     "chromadb>=1.3.5",
     "rank-bm25>=0.2.2",
@@ -31,3 +31,6 @@ include = ["kernelmind", "kernelmind.*"]
 [project.scripts]
 km = "kernelmind.cli:cli"
 kernelmind = "kernelmind.cli:cli"
+
+[tool.setuptools.package-data]
+kernelmind = ["parsers/js/*"]

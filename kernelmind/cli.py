@@ -5,7 +5,7 @@ from kernelmind.ingestion.downloader import download_and_extract
 from kernelmind.ingestion.crawler import crawl_repo
 
 from kernelmind.parsers.python_parser import parse_python
-from kernelmind.parsers.js_parser import parse_javascript
+from kernelmind.parsers.js.js_parser import parse_javascript
 from kernelmind.parsers.json_parser import parse_json
 from kernelmind.parsers.yaml_parser import parse_yaml
 
@@ -16,6 +16,58 @@ from kernelmind.utils.chunker import build_text_chunks
 from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
 
 from kernelmind.search import search as run_search
+import subprocess
+import shutil
+from pathlib import Path
+
+# ---------------------------------------------------
+# Environment setup checks
+# ---------------------------------------------------
+
+def ensure_node():
+    """Check if Node.js is installed."""
+    if shutil.which("node") is None:
+        click.echo("❌ Node.js is required for JS/TS parsing.\nInstall from https://nodejs.org/")
+        raise SystemExit(1)
+
+
+def install_js_dependencies():
+    """Run npm install inside kernelmind/parsers/js to install Babel deps."""
+    js_dir = Path(__file__).parent / "parsers" / "js"
+
+    pkg_json = js_dir / "package.json"
+    if not pkg_json.exists():
+        click.echo(f"❌ package.json missing in {js_dir}. Cannot install JS dependencies.")
+        raise SystemExit(1)
+
+    click.echo("📦 Installing JS parser dependencies (@babel/parser, @babel/traverse)...")
+
+    try:
+        subprocess.run(["npm", "install"], cwd=str(js_dir), check=True)
+        click.echo("✅ JS dependencies installed.")
+    except subprocess.CalledProcessError:
+        click.echo("❌ Failed to run npm install. Make sure npm is installed.")
+        raise SystemExit(1)
+
+
+def ensure_ollama():
+    """Check if Ollama is installed."""
+    if shutil.which("ollama") is None:
+        click.echo("❌ Ollama is required. Install from https://ollama.com")
+        raise SystemExit(1)
+
+
+def ensure_qwen_model(model="qwen2.5-coder:7b"):
+    """Check and download the required Ollama model."""
+    click.echo("🔎 Checking for required Ollama model...")
+
+    result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+    if model not in result.stdout:
+        click.echo(f"⬇️  Pulling Ollama model: {model}")
+        subprocess.run(["ollama", "pull", model], check=True)
+        click.echo("✅ Model downloaded.")
+    else:
+        click.echo("✅ Model already installed.")
 
 
 def extract_repo_name(path):
@@ -162,11 +214,38 @@ def answer(question, k, repo):
         click.echo("")
         click.echo(result)
 
+# -----------------------
+# setup command
+# -----------------------
+@cli.command()
+def setup():
+    """Set up KernelMind (Node, JS parser deps, Ollama, Qwen model)."""
+
+    click.echo("🔧 KernelMind setup in progress...\n")
+
+    # Node.js
+    click.echo("➡️ Checking Node.js...")
+    ensure_node()
+
+    # JS parser deps
+    click.echo("➡️ Installing JS parser packages...")
+    install_js_dependencies()
+
+    # Ollama + Model
+    click.echo("➡️ Checking Ollama installation...")
+    ensure_ollama()
+
+    click.echo("➡️ Checking Qwen model...")
+    ensure_qwen_model()
+
+    click.echo("\n🎉 KernelMind setup complete!")
+
 
 # aliases
 cli.add_command(ingest, "i")
 cli.add_command(search, "s")
 cli.add_command(answer, "a")
+cli.add_command(setup, "setup")
 
 if __name__ == "__main__":
     cli()

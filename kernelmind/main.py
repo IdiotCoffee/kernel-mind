@@ -3,7 +3,7 @@ from kernelmind.ingestion.downloader import download_and_extract
 from kernelmind.ingestion.crawler import crawl_repo
 
 from kernelmind.parsers.python_parser import parse_python
-from kernelmind.parsers.js_parser import parse_javascript
+from kernelmind.parsers.js.js_parser import parse_javascript
 from kernelmind.parsers.json_parser import parse_json
 from kernelmind.parsers.yaml_parser import parse_yaml
 

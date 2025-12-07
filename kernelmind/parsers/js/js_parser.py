@@ -2,6 +2,11 @@ import json
 import subprocess
 import hashlib
 from typing import Any, Dict, List
+from pathlib import Path
+import os
+
+JS_SCRIPT = Path(__file__).parent / "js" / "parse_js.js"
+
 
 
 def sha256_of_file(path: str) -> str:
@@ -14,7 +19,7 @@ def parse_javascript(path: str) -> Dict[str, Any]:
 
     try:
         result = subprocess.check_output(
-            ["node", "parse_js.js", path],
+            ["node", str(JS_SCRIPT), path],
             stderr=subprocess.STDOUT
         ).decode("utf8")
     except subprocess.CalledProcessError as e:
