@@ -1,3 +1,0 @@
-[console_scripts]
-kernelmind = kernelmind.cli:cli
-km = kernelmind.cli:cli
