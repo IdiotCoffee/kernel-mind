@@ -1,209 +1,208 @@
+# KernelMind Retrieval Engine
 
-# KernelMind
+KernelMind is a retrieval and reasoning system built to analyze large codebases and answer technical questions based on actual source code. The focus is on structured indexing, multi-step retrieval, and grounded answer generation.
 
-KernelMind is a local, code-aware retrieval and reasoning engine for navigating and understanding large codebases.  
-It works entirely from the command line, uses a hybrid retrieval pipeline (BM25 + embeddings + type-based boosts), and synthesizes final answers using a locally-hosted Qwen 2.5 Coder 14B model.
+Everything runs **fully self-hosted** right now.
+Ollama handles the models locally, the vector database runs on my machine, and yes — it has definitely pushed my CPU/GPU harder than they deserve. I’m considering adding optional cloud support later so this setup is easier to run and doesn't heat the room.
 
-Think of it as a fast, CLI-first tool that can ingest a GitHub repo, index the code, and answer deep questions about how that code works.
-
----
 
 ## Features
+### 1. **Multi-Stage Retrieval**
 
-### 🔍 Code-Aware Retrieval  
-KernelMind performs multi-stage retrieval over the indexed repository:
+KernelMind layers several retrieval strategies to improve precision:
+   - Embedding search (Qwen embeddings + Chroma)
+   - BM25 keyword scoring
+   - Type and domain-based boosting
+   - Symbol-aware ranking
+   - Call-chain expansion
+   - Cross-encoder reranking with MiniLM
+   - Chunk summarization before answer generation
 
-1. **BM25 keyword scoring** (via `rank_bm25 == BM25Okapi`)
-2. **Embedding search** using a locally-hosted ChromaDB instance
-3. **Type-Based Boosting** to push more “meaningful” chunks up the ranking (functions > methods > classes > imports > files)
+The goal is to reduce noise and surface the most relevant code, even in large or complex repositories.
 
-```python
-TYPE_BOOST = {
-    "function": 0.20,
-    "method":   0.18,
-    "class":    0.10,
-    "import":   0.02,
-    "file":     0.00,
-    None:       0.00,
-}
-```
+### 2. Structured Chunking
 
-4. **Cross-Encoder Reranking** using  
-   `BAAI/bge-reranker-base`  
-   This reorders the final candidate list to return the most semantically relevant code chunks.
-
-The hybrid scoring pipeline ensures that results are not only keyword-relevant, but structurally meaningful.
-
----
-
-## 🧠 Local LLM — Qwen 2.5 Coder 14B  
-KernelMind uses **Qwen 2.5 Coder 14B**, running locally via Ollama, to synthesize final answers.
-
-### *Will Qwen 14B handle raw code chunks?*  
-Yes — but with some nuance:
-
-- 14B models can easily handle 4K–8K tokens of mixed natural language + code.  
-- For huge chunks (hundreds of lines), you may need to either  
-  - reduce chunk size  
-  - or rely on *summarized* chunks rather than raw code.  
-
-As of now, KernelMind sticks to structural chunking (file / class / method / import).  
-Direct inclusion of **raw method bodies** is planned but must be tested for context-window stability.
-
----
-
-## 📁 Ingestion & Parsing
-
-### Current behavior (v0.1)
-KernelMind currently parses **Python files only**.  
-The ingestion pipeline:
-
-1. `kernelmind ingest <repo_url>`
-2. Repository is cloned locally
-3. Files are filtered using:
-   ```python
-   EXCLUDE_DIRS = {
-       "node_modules", "dist", "build", "__pycache__", ".git",
-       ".idea", ".vscode", ".venv", ".env"
-   }
-
-   INCLUDE_DIRS = {
-       ".py", ".js", ".ts", ".java", ".go",
-       ".json", ".yaml", ".yml", ".toml", ".md"
-   }
-   ```
-4. Only Python files are parsed, and the following chunks are extracted:
-   - File-level summary
-   - Class names + docstrings
-   - Method names + parents  
-   - Function names + docstrings
+Repositories are split into meaningful units:
+   - Functions
+   - Classes
+   - Methods
+   - Logical blocks
    - Imports
+   - Comments and docstrings
 
-*(Raw method bodies: optional and experimental — may push Qwen context window too far. This is being tested.)*
+This improves retrieval quality compared to indexing entire files.
 
-5. Structural metadata is embedded & persisted in **local ChromaDB**.
+### 3. Batch-Safe Vector Insertion
+
+I discovered pretty quickly that Chromadb has a limit on batch size, so my indexing pipeline uses safe batches automatically: 
+It adds vectors in safe batches. Chroma cannot handle > ~5461 items per batch.
+
+### 4. Supported Languages
+
+KernelMind currently parses:
+   - Python
+   - JavaScript
+   - TypeScript
+   - JSON
+   - YAML
+
+Additional languages can be added by extending the chunking layer.
+
+---
+### Multi-Stage Retrieval (Detailed Overview)
+
+KernelMind doesn't depend on a single retrieval signal. Codebases contain structure, naming conventions, and interconnected logic, so the system combines several techniques to narrow down the most relevant pieces of code.
+
+Here is the full retrieval pass.
 
 ---
 
-## 📐 Retrieval Flow (Full Pipeline)
+### 1. Embedding Search (Qwen + Chroma)
 
-Here’s how `kernelmind answer` actually works internally:
+The query is embedded using Qwen embeddings.
+Chroma returns its top-K vector matches.
 
-1. User runs:
-   ```
-   kernelmind answer "How does request throttling work?" --repo my_repo
-   ```
-
-2. Query is embedded and compared against:
-   - BM25 keyword scored chunks  
-   - Vector similarity chunks  
-   - Type-boosted scores  
-   - Cross-encoder reranked final set  
-
-3. Top-K chunks are selected.
-
-4. Qwen 2.5 Coder 14B receives:
-   - the user question  
-   - the top-ranked chunks  
-   - a synthesizer prompt  
-
-5. Qwen produces a structured, explanation-style answer.  
-   Chunks are NOT shown unless the user requests them (`kernelmind search --show`).
+This step handles semantic similarity well — for example, questions about logic, behavior, or “what happens when X is called.”
+However, embeddings alone aren’t enough for precise identifiers or short names.
 
 ---
 
-## 🛠️ CLI Usage
+### 2. BM25 Keyword Retrieval
 
-KernelMind is a CLI-first tool with short aliases:
+BM25 runs in parallel with embeddings.
 
-| Command | Alias | Description |
-|--------|--------|-------------|
-| `kernelmind` | `km` | base command |
-| `kernelmind ingest` | `km i` | Clone + index a repo |
-| `kernelmind search` | `km s` | Run query + show retrieved chunks |
-| `kernelmind answer` | `km a` | Run query + synthesize final answer |
+It is particularly effective at:
 
-### Ingest a repo
-```
-km ingest https://github.com/someproject/somerepo
-```
+- exact function or variable names
+- file or module names
+- short tokens
+- error messages
+- keywords
 
-### Search (show raw chunks)
-```
-km search "how is authentication implemented?" --repo somerepo --show
-```
-
-### Full synthesized answer
-```
-km answer "how does the caching layer work?" --repo somerepo
-```
+BM25 results are scored and kept for later merging.
 
 ---
 
-## ⚙️ Requirements
+### 3. Type and Domain-Based Boosts
 
-KernelMind depends on:
+Some chunks are more useful than others depending on the query.
 
-- Python 3.10+
-- Local ChromaDB instance (`chromadb==1.3.5`)
-- Local LLM backend (Qwen 2.5 Coder 14B via Ollama)
-- BM25 (`rank-bm25`)
-- Cross-encoder reranker (`BAAI/bge-reranker-base`)
+KernelMind applies boosts based on:
 
-A full dependency list lives in `requirements.txt`.  
-Some dependencies (e.g. Kubernetes clients, Uvicorn, HTTP frameworks) may be removed in future versions — these appear from earlier experiments and are not essential for v0.1.
+- code type (functions, classes, logic blocks over comments)
+- file roles (e.g., auth, middleware, configuration)
+- symbol matches extracted from the query
 
-Cleanup will happen before v0.2.
+If the query references a specific function or class, chunks related to that symbol get additional weight.
 
 ---
 
-## 🚧 Roadmap
+### 4. Call-Chain Expansion
 
-### Near-term (v0.2)
-- JS/TS parser  
-- Class/method signature extraction for Java & Go  
-- Actual method-body chunking  
-- Documentation chunking (README, Markdown, comments)  
-- Improved token-aware chunk sizing for LLM stability  
-- Configurable reranker weights
+When a symbol is detected — for example, a function name — KernelMind expands the context automatically:
 
-### Longer-term
-- AST-aware cross-file call-graph generation  
-- GitHub App integration for indexing private repos  
-- Pluggable vector DB backends  
-- Web UI (optional)
+- callers
+- callees
+- adjacent helper methods
+- parent or child classes
+- related modules
+
+This helps surface connected logic that embeddings or keywords might miss.
 
 ---
 
-## 📝 Limitations (Honest List)
+### 5. Combined Scoring
 
-KernelMind v0.1 is functional but early:
+All signals are merged into a single relevance score:
 
-- Only Python AST is parsed deeply.  
-- JS/TS/Go/Java are recognized but not parsed.  
-- Qwen 14B sometimes drops low-level code details if chunks are large.  
-- Large repos (>20k LOC) may require memory tuning for embedding load.  
-- No multi-file semantic stitching yet.  
-- No context window optimization beyond naïve chunking.
+- embedding similarity
+- BM25 score
+- type/domain boosts
+- symbol matches
+- call-chain relevance
 
-These are intentional trade-offs for a small, local-first v0.1.
-
----
-
-## 📦 Version
-`v0.1.0` — first public release.
+This produces a ranked list of candidate chunks.
+But to improve precision, one more step is used.
 
 ---
 
-## 🤝 Contributing
-Contributions for more language parsers, better chunking strategies, and UI tools are welcome.
+### 6. Cross-Encoder Reranking (MiniLM-L-6-v2)
+
+The top candidates are passed through a cross-encoder.
+Unlike embeddings, the cross-encoder reads the query and chunk together and evaluates their relevance directly.
+
+This model resolves many of the mistakes that embedding search and BM25 might introduce, and usually gives the cleanest final ordering.
 
 ---
 
-## 📣 Final Notes
+### 7. Dedupe, Cleanup, and Ordering
 
-KernelMind is not just “another RAG script.”  
-It is a carefully engineered, multi-stage code retrieval and reasoning pipeline optimized for **developer comprehension**, **local execution**, and **transparent retrieval logic**.
+After reranking:
 
-If you're working with large or unfamiliar codebases, this tool aims to make deep code questions answerable in seconds — right from your terminal.
+- near-duplicate chunks are removed
+- large unhelpful sections are filtered
+- chunks from the same file are grouped
+- the final list is sorted by combined relevance
 
+This prepares the context for summarization.
+
+---
+
+### 8. Summarization Layer
+
+Each selected chunk is summarized before being sent to the LLM.
+The summaries keep the important logic while reducing noise.
+
+This helps prevent hallucinations and keeps the answer grounded in the retrieved evidence.
+
+---
+
+### 9. Answer Generation (Qwen 2.5 Code via Ollama)
+
+Finally, the summarized chunks, the raw chunks, and the original query are given to a Qwen Code model running via Ollama.
+
+The model produces an answer based strictly on the retrieved context.
+
+---
+### Model Choices
+
+Several models were tested during development:
+
+- Gemma2 9B — capable but slow for long contexts
+- DeepSeek Code Lite — decent reasoning, not ideal for iterative retrieval
+- Qwen 2.5 Code — current choice  
+  Strong balance of reasoning speed and code understanding
+
+Embeddings use Qwen embeddings.
+Reranking uses MiniLM-L-6-v2.
+
+---
+
+### Current Capabilities
+
+- Works across Python, JS, TS, JSON, YAML
+- Handles full repo analysis
+- Understands symbols and code structure
+- Expands context using call-chains
+- Generates grounded, evidence-based answers
+- Fully offline, self-hosted retrieval + reasoning
+- Stable on very large repositories via safe batching
+
+---
+
+### Planned Improvements (Feel Free to add PRs!)
+
+- Faster BM25 implementation
+- Better noise filtering
+- Stronger deduplication
+- Cached reranker results
+- Region-aware chunking for JS/TS
+- Improved YAML/JSON parsing
+- Optional cloud mode so local hardware isn’t overloaded
+
+---
+
+### Future Cloud Mode
+
+Right now everything runs locally.
+A cloud option is planned to make it easier to try the system without setting up local models or burning CPU/GPU cycles.
