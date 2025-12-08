@@ -19,6 +19,8 @@ from kernelmind.search import search as run_search
 import subprocess
 import shutil
 from pathlib import Path
+from kernelmind.config import load_config, save_config
+
 
 # ---------------------------------------------------
 # Environment setup checks
@@ -57,7 +59,7 @@ def ensure_ollama():
         raise SystemExit(1)
 
 
-def ensure_qwen_model(model="qwen2.5-coder:7b"):
+def ensure_qwen_model(model="qwen2.5-coder:14b"):
     """Check and download the required Ollama model."""
     click.echo("🔎 Checking for required Ollama model...")
 
@@ -137,7 +139,7 @@ def ingest(repo_url):
     from kernelmind.utils.config_chunker import build_config_chunks
     from kernelmind.utils.mongo_store import db
 
-    pipeline = EmbeddingPipeline(backend="local")
+    pipeline = EmbeddingPipeline()
     total_chunks = 0
 
     # ---------- CODE CHUNKING ----------
@@ -240,12 +242,36 @@ def setup():
 
     click.echo("\n🎉 KernelMind setup complete!")
 
+@click.command()
+@click.argument("api_key")
+def set_api_key(api_key):
+    """Set the OpenAI API key for cloud inference."""
+    config = load_config()
+    config["inference"]["api_key"] = api_key
+    config["inference"]["mode"] = "cloud"
+    save_config(config)
+    click.echo("API key saved. Cloud mode enabled.")
+
+
+@click.command()
+def set_local():
+    """Switch inference to local mode."""
+    config = load_config()
+    config["inference"]["mode"] = "local"
+    save_config(config)
+    click.echo("Switched to local inference.")
+
 
 # aliases
 cli.add_command(ingest, "i")
 cli.add_command(search, "s")
 cli.add_command(answer, "a")
 cli.add_command(setup, "setup")
+cli.add_command(set_api_key)
+cli.add_command(set_local)
+
+
+
 
 if __name__ == "__main__":
     cli()

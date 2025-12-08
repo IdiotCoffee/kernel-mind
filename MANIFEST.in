@@ -1,1 +1,3 @@
-recursive-include kernelmind/parsers/js *
+include README.md
+recursive-include kernelmind/parsers/js *.js
+recursive-include kernelmind/parsers/js package.json

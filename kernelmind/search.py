@@ -6,9 +6,13 @@ from typing import List, Tuple
 import chromadb
 from rank_bm25 import BM25Okapi
 
-from kernelmind.embeddings.local_backend import LocalEmbeddingBackend
 from kernelmind.utils.rewriter import QueryRewriter
-from kernelmind.synthesis import synthesize_answer
+from kernelmind.synthesis.synthesis_local import synthesize_answer
+from kernelmind.synthesis.synthesis_gpt import synthesize_answer_gpt, init_client
+from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
+
+from kernelmind.config import load_config
+
 
 # Reranker imports (transformers)
 try:
@@ -21,7 +25,7 @@ except Exception:
 # ----------------------------------
 # Init
 # ----------------------------------
-_EMBEDDER = LocalEmbeddingBackend()
+_EMBEDDER = EmbeddingPipeline()
 _REWRITER = QueryRewriter()
 
 # Reranker will be created lazily when first used
@@ -135,7 +139,7 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
 
             for sym in symbols:
                 try:
-                    sym_emb = _EMBEDDER.embed([sym])
+                    sym_emb = _EMBEDDER.model.encode([sym], normalize_embeddings=True)
                 except Exception:
                     continue
 
@@ -228,7 +232,8 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
     print("Refined Query :", refined)
     print("--------------------------------------\n")
 
-    q_emb = _EMBEDDER.embed([refined])
+    q_emb = _EMBEDDER.model.encode([refined], normalize_embeddings=True)
+
 
     client = chromadb.PersistentClient(path=".chromadb")
     col = client.get_collection("kernelmind_index")
@@ -368,8 +373,15 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
             "type": meta.get("type"),
         })
     print("[RERANKER] Reranking done - Synthesizing answer")
-    answer = synthesize_answer(query, chunk_objs)
+    config = load_config()
+
+    if config["inference"]["mode"] == "cloud":
+        init_client(config["inference"]["api_key"])
+        answer = synthesize_answer_gpt(query, chunk_objs)
+    else:
+        answer = synthesize_answer(query, chunk_objs)
     return answer
+
 
 if __name__ == "__main__":
     import sys

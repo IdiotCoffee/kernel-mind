@@ -20,7 +20,10 @@ dependencies = [
     "requests>=2.31",
     "pyyaml>=6.0",
     "rich>=13.0",
-    "tqdm>=4.0"
+    "tqdm>=4.0",
+    "pymongo>=4.0.0",
+    "ollama",
+    "openai"
 ]
 
 # Include all kernelmind modules + subpackages
@@ -33,4 +36,5 @@ km = "kernelmind.cli:cli"
 kernelmind = "kernelmind.cli:cli"
 
 [tool.setuptools.package-data]
-kernelmind = ["parsers/js/*"]
+kernelmind = ["parsers/js/*.js", "parsers/js/package.json"]
+
