@@ -21,6 +21,10 @@ import shutil
 from pathlib import Path
 from kernelmind.config import load_config, save_config
 
+from kernelmind.render import render_full_output
+from kernelmind.search import search
+
+
 
 # ---------------------------------------------------
 # Environment setup checks
@@ -209,12 +213,19 @@ def search(query, repo, k, show):
 @click.option("-k", default=5, help="Number of supporting chunks")
 @click.option("--repo", default=None, help="Filter by repository name")
 def answer(question, k, repo):
-
+    """Answer a question using KernelMind's retrieval + LLM synthesis."""
     result = run_search(question, k=k, repo_name=repo, synthesize=True)
 
-    if result is not None:
-        click.echo("")
-        click.echo(result)
+    if not result:
+        click.echo("No answer generated.")
+        return
+
+    from kernelmind.render import render_full_output
+
+    answer_text = result.get("answer")
+    chunks = result.get("chunks", [])
+
+    render_full_output(answer_text, chunks)
 
 # -----------------------
 # setup command
@@ -260,6 +271,35 @@ def set_local():
     config["inference"]["mode"] = "local"
     save_config(config)
     click.echo("Switched to local inference.")
+
+
+@cli.command()
+def preview():
+    """Preview KernelMind's CLI styling without calling LLMs."""
+    from kernelmind.render import render_full_output
+
+    dummy_answer = """
+**Explanation:**
+This is a preview of how KernelMind formats output.
+
+**Key Points:**
+- Bold text works.
+- Code blocks are highlighted.
+- Headings are colored.
+"""
+
+    dummy_chunks = [
+        {
+            "path": "src/example.py",
+            "start": 10,
+            "end": 25,
+            "text": "def hello():\n    print('hello world')",
+            "qualified_name": "hello",
+            "type": "function",
+        }
+    ]
+
+    render_full_output(dummy_answer, dummy_chunks)
 
 
 # aliases
