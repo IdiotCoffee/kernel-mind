@@ -1,3 +1,4 @@
+# file: kernelmind/search.py
 import os
 import re
 import math
@@ -13,14 +14,11 @@ from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
 
 from kernelmind.config import load_config
 
-
 # Reranker imports (transformers)
 try:
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+    from sentence_transformers import CrossEncoder
 except Exception:
-    AutoTokenizer = None
-    AutoModelForSequenceClassification = None
-    pipeline = None
+    CrossEncoder = None
 
 # ----------------------------------
 # Init
@@ -30,7 +28,7 @@ _REWRITER = QueryRewriter()
 
 # Reranker will be created lazily when first used
 _RERANKER = None
-_RERANKER_MODEL = "BAAI/bge-reranker-base"
+_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 CANDIDATE_MULTIPLIER = 12
 
@@ -58,17 +56,21 @@ CALL_PATTERN = re.compile(
     r"\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\("
 )
 
+
 def tokenize(text):
     return token_pattern.findall((text or "").lower())
 
+
 def should_allow(path: str, query: str):
     p = (path or "").lower()
+    # allow test/docs queries explicitly even if path matches blocked folders
     if "test" in query.lower() or "docs" in query.lower():
         return True
     for bad in BLOCKED_FOLDERS:
         if bad in p:
             return False
     return True
+
 
 def pretty(indoc, inmeta, indists):
     for i in range(len(indoc)):
@@ -85,6 +87,7 @@ def pretty(indoc, inmeta, indists):
         print("\nCode:\n")
         print(indoc[i])
 
+
 def extract_called_symbols(text: str):
     found = set()
     if not text:
@@ -95,6 +98,7 @@ def extract_called_symbols(text: str):
         if tok and tok not in ("if", "for", "while", "return", "class", "with", "async"):
             found.add(tok)
     return found
+
 
 def _meta_matches_symbol(meta: dict, sym: str):
     if not meta:
@@ -109,7 +113,12 @@ def _meta_matches_symbol(meta: dict, sym: str):
         return True
     return False
 
+
 def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol=6):
+    """
+    Expand call-chain by finding chunks whose qualified name matches symbols called
+    inside function/method chunks. Uses embedder to query by symbol.
+    """
     seen = set()
     expanded = []
 
@@ -138,9 +147,16 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
                 continue
 
             for sym in symbols:
+                # embed the symbol safely
                 try:
-                    sym_emb = _EMBEDDER.model.encode([sym], normalize_embeddings=True)
+                    # some embedders expose model.encode; fall back to pipeline
+                    sym_emb = None
+                    if hasattr(_EMBEDDER, "model") and hasattr(_EMBEDDER.model, "encode"):
+                        sym_emb = _EMBEDDER.model.encode([sym], normalize_embeddings=True)
+                    else:
+                        sym_emb = _EMBEDDER.embed([sym])
                 except Exception:
+                    # skip symbol if embed fails
                     continue
 
                 try:
@@ -173,11 +189,11 @@ def expand_call_chain(initial_chunks, repo_name, collection, depth=2, per_symbol
 
     return expanded
 
+
 # ----------------------------------
 # RERANKER
 # ----------------------------------
 
-from sentence_transformers import CrossEncoder
 
 class Reranker:
     def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
@@ -188,6 +204,8 @@ class Reranker:
 
     def _load(self):
         print("[RERANKER] Initializing cross-encoder...")
+        if CrossEncoder is None:
+            raise RuntimeError("sentence-transformers CrossEncoder not available in environment")
         try:
             self.model = CrossEncoder(self.model_name, device="cuda")
             self.device = "cuda"
@@ -211,20 +229,36 @@ class Reranker:
                 return self.model.predict(pairs, batch_size=batch_size)
             raise e
 
+
 def _ensure_reranker():
     global _RERANKER
     if _RERANKER is None:
         print("[RERANKER] Creating new reranker instance...")
-        _RERANKER = Reranker()
+        try:
+            _RERANKER = Reranker()
+        except Exception as e:
+            print("[RERANKER] Failed to create reranker:", e)
+            _RERANKER = None
     else:
         print(f"[RERANKER] Reusing existing reranker on { _RERANKER.device }")
     return _RERANKER
+
 
 # ----------------------------------
 # MAIN SEARCH
 # ----------------------------------
 
+
 def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_reranker=True):
+    """
+    Main search pipeline:
+    - rewrite query
+    - embed query -> Chroma dense query
+    - filter candidates -> expand call-chain
+    - bm25 & chroma combination -> base scores -> (optional) rerank
+    - synthesize (local or cloud)
+    Returns a dict: {"answer": <markdown_or_struct>, "chunks": [chunk_objs]}
+    """
     refined = _REWRITER.rewrite(query)
 
     print("\n--------------------------------------")
@@ -232,11 +266,23 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
     print("Refined Query :", refined)
     print("--------------------------------------\n")
 
-    q_emb = _EMBEDDER.model.encode([refined], normalize_embeddings=True)
+    # embed query (guarded)
+    try:
+        if hasattr(_EMBEDDER, "model") and hasattr(_EMBEDDER.model, "encode"):
+            q_emb = _EMBEDDER.model.encode([refined], normalize_embeddings=True)
+        else:
+            q_emb = _EMBEDDER.embed([refined])
+    except Exception as e:
+        print("Embedding failed:", e)
+        return None
 
-
-    client = chromadb.PersistentClient(path=".chromadb")
-    col = client.get_collection("kernelmind_index")
+    # open chroma
+    try:
+        client = chromadb.PersistentClient(path=".chromadb")
+        col = client.get_collection("kernelmind_index")
+    except Exception as e:
+        print("Chroma client/collection init failed:", e)
+        return None
 
     n_candidates = max(k * CANDIDATE_MULTIPLIER, k + 10)
     try:
@@ -278,11 +324,13 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
         print("No documents to rank after expansion.")
         return None
 
+    # BM25 over tokenized corpus
     corpus_tokens = [tokenize(d) for d in docs2]
     bm25 = BM25Okapi(corpus_tokens)
     q_tokens = tokenize(refined)
     bm25_scores = bm25.get_scores(q_tokens)
 
+    # convert chroma distances -> similarity (higher = better)
     if dists2:
         min_d, max_d = min(dists2), max(dists2)
     else:
@@ -329,6 +377,8 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
         try:
             print(f"[RERANKER] Running reranker on {len(docs2)} chunks...")
             rer = _ensure_reranker()
+            if rer is None:
+                raise RuntimeError("Reranker unavailable")
             print(f"[RERANKER] Device = {rer.device}")
             text_chunks = [f"{m.get('qualified_name') or ''} -- {d}" for d, m in zip(docs2, metas2)]
             rerank_scores = rer.score_batch(refined, text_chunks, batch_size=8)
@@ -336,7 +386,6 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
             print("Reranker failed to initialize/score:", e)
             rerank_scores = None
 
-    # Fix: avoid ambiguous truth-value check
     has_rerank = rerank_scores is not None and len(rerank_scores) > 0
 
     final_scores = []
@@ -373,18 +422,61 @@ def search(query, k=5, repo_name=None, synthesize=True, show_chunks=False, use_r
             "type": meta.get("type"),
         })
     print("[RERANKER] Reranking done - Synthesizing answer")
+
+    # load config safely
     config = load_config()
+    inference_cfg = config.get("inference", {}) if isinstance(config, dict) else {}
 
-    if config["inference"]["mode"] == "cloud":
-        init_client(config["inference"]["api_key"])
-        answer = synthesize_answer_gpt(query, chunk_objs)
+    if inference_cfg.get("mode") == "cloud":
+        # Cloud path: synthesize_answer_gpt returns structured JSON or dict
+        init_client(inference_cfg.get("api_key"))
+        try:
+            data = synthesize_answer_gpt(query, chunk_objs)
+        except Exception as e:
+            print("Cloud synthesis failed:", e)
+            # fallback to local text answer
+            answer_markdown = synthesize_answer(query, chunk_objs)
+            return {"answer": answer_markdown, "chunks": chunk_objs}
+
+        # If synthesize returned a dict with structured fields, convert to markdown
+        if isinstance(data, dict):
+            explanation = data.get("explanation", "")
+            key_points = data.get("key_points", []) or []
+            citations = data.get("citations", []) or []
+
+            md = f"**Explanation:**\n{explanation}\n\n**Key Points:**\n"
+            for kp in key_points:
+                md += f"- {kp}\n"
+
+            if citations:
+                md += "\n**Citations:**\n"
+                for c in citations:
+                    path = c.get("path", "<unknown>")
+                    start = c.get("start", "?")
+                    end = c.get("end", "?")
+                    md += f"- {path}:{start}-{end}\n"
+
+            answer_markdown = md.strip()
+            # return structured data as well so renderer can access `citations` if needed
+            data_out = {
+                "explanation": explanation,
+                "key_points": key_points,
+                "citations": citations,
+                "chunks": chunk_objs
+            }
+            # include both markdown and structured form - primary is markdown for renderer
+            return {"answer": answer_markdown, "chunks": chunk_objs, "structured": data_out}
+        else:
+            # if cloud returned plain text/markdown
+            return {"answer": str(data), "chunks": chunk_objs}
+
     else:
-        answer = synthesize_answer(query, chunk_objs)
-    return {
-    "answer": answer,
-    "chunks": chunk_objs
-}
-
+        # Local path: synthesize_answer returns plain markdown/text
+        answer_markdown = synthesize_answer(query, chunk_objs)
+        return {
+            "answer": answer_markdown,
+            "chunks": chunk_objs,
+        }
 
 
 if __name__ == "__main__":
