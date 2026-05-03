@@ -1,39 +1,37 @@
 import os
+import shutil
+import subprocess
+from pathlib import Path
+
 import click
 
-from kernelmind.ingestion.downloader import download_and_extract
+from kernelmind.config import load_config, save_config
+from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
 from kernelmind.ingestion.crawler import crawl_repo
-
-from kernelmind.parsers.python_parser import parse_python
+from kernelmind.ingestion.downloader import download_and_extract
 from kernelmind.parsers.js.js_parser import parse_javascript
 from kernelmind.parsers.json_parser import parse_json
+from kernelmind.parsers.python_parser import parse_python
 from kernelmind.parsers.yaml_parser import parse_yaml
-
-
-from kernelmind.utils.mongo_store import save_parsed_code, save_parsed_config
-from kernelmind.utils.context_builder import build_context_pack
-from kernelmind.utils.chunker import build_text_chunks
-from kernelmind.embeddings.embedding_pipeline import EmbeddingPipeline
-
-from kernelmind.search import search as run_search
-import subprocess
-import shutil
-from pathlib import Path
-from kernelmind.config import load_config, save_config
-
 from kernelmind.render import render_full_output
-from kernelmind.search import search
 
-
+# from kernelmind.search import search
+from kernelmind.search import search as run_search
+from kernelmind.utils.chunker import build_text_chunks
+from kernelmind.utils.context_builder import build_context_pack
+from kernelmind.utils.mongo_store import save_parsed_code, save_parsed_config
 
 # ---------------------------------------------------
 # Environment setup checks
 # ---------------------------------------------------
 
+
 def ensure_node():
     """Check if Node.js is installed."""
     if shutil.which("node") is None:
-        click.echo("❌ Node.js is required for JS/TS parsing.\nInstall from https://nodejs.org/")
+        click.echo(
+            "❌ Node.js is required for JS/TS parsing.\nInstall from https://nodejs.org/"
+        )
         raise SystemExit(1)
 
 
@@ -43,10 +41,14 @@ def install_js_dependencies():
 
     pkg_json = js_dir / "package.json"
     if not pkg_json.exists():
-        click.echo(f"❌ package.json missing in {js_dir}. Cannot install JS dependencies.")
+        click.echo(
+            f"❌ package.json missing in {js_dir}. Cannot install JS dependencies."
+        )
         raise SystemExit(1)
 
-    click.echo("📦 Installing JS parser dependencies (@babel/parser, @babel/traverse)...")
+    click.echo(
+        "📦 Installing JS parser dependencies (@babel/parser, @babel/traverse)..."
+    )
 
     try:
         subprocess.run(["npm", "install"], cwd=str(js_dir), check=True)
@@ -170,10 +172,7 @@ def ingest(repo_url):
         logical = f.replace(path + "/", "")
 
         # IMPORTANT: configs live in db.configs, not db.files
-        config_doc = db.configs.find_one({
-            "file": logical,
-            "repo": repo_name
-        })
+        config_doc = db.configs.find_one({"file": logical, "repo": repo_name})
 
         if not config_doc:
             continue
@@ -186,7 +185,7 @@ def ingest(repo_url):
             total_chunks += len(chunks)
 
     click.echo(f"\nIngestion complete. Embedded {total_chunks} chunks.")
-    click.echo(f"You can now run: km s \"your query\" --repo {repo_name}")
+    click.echo(f'You can now run: km s "your query" --repo {repo_name}')
 
 
 # -----------------------
@@ -196,13 +195,19 @@ def ingest(repo_url):
 @click.argument("query")
 @click.option("--repo", default=None, help="Filter by repository name")
 @click.option("-k", default=5, help="Top-k chunks to retrieve")
-@click.option("--show", is_flag=True, help="Show full chunk content")
+@click.option("--show", is_flag=True, help="Show retrieved chunks only")
 def search(query, repo, k, show):
 
-    run_search(query, k=k, repo_name=repo, synthesize=False, show_chunks=show)
+    result = run_search(query, k=k, repo_name=repo)
+
+    if not result:
+        click.echo("No results.")
+        return
 
     if show:
-        pass
+        for c in result["chunks"]:
+            click.echo(f"\n{c['path']}:{c['start']}-{c['end']}\n")
+            click.echo(c["text"])
 
 
 # -----------------------
@@ -212,20 +217,24 @@ def search(query, repo, k, show):
 @click.argument("question")
 @click.option("-k", default=5, help="Number of supporting chunks")
 @click.option("--repo", default=None, help="Filter by repository name")
-def answer(question, k, repo):
-    """Answer a question using KernelMind's retrieval + LLM synthesis."""
-    result = run_search(question, k=k, repo_name=repo, synthesize=True)
+@click.option("--show-chunks", is_flag=True, help="Show supporting chunks")
+def answer(question, k, repo, show_chunks):
+    """Answer a question using KernelMind."""
+
+    result = run_search(question, k=k, repo_name=repo)
 
     if not result:
         click.echo("No answer generated.")
         return
 
-    from kernelmind.render import render_full_output
-
     answer_text = result.get("answer")
     chunks = result.get("chunks", [])
 
-    render_full_output(answer_text, chunks)
+    if show_chunks:
+        render_full_output(answer_text, chunks)
+    else:
+        click.echo(answer_text)
+
 
 # -----------------------
 # setup command
@@ -252,6 +261,7 @@ def setup():
     ensure_qwen_model()
 
     click.echo("\n🎉 KernelMind setup complete!")
+
 
 @click.command()
 @click.argument("api_key")
@@ -311,7 +321,38 @@ cli.add_command(set_api_key)
 cli.add_command(set_local)
 
 
-
-
 if __name__ == "__main__":
     cli()
+
+
+@cli.command()
+@click.option("--repo", default=None)
+def chat(repo):
+    """Interactive KernelMind session."""
+
+    from kernelmind.response_engine.engine import ResponseEngine
+    from kernelmind.search import search as run_search
+
+    engine = ResponseEngine()
+
+    click.echo("KernelMind Interactive Mode (type 'exit' to quit)\n")
+
+    while True:
+        query = input("> ").strip()
+
+        if query.lower() in ["exit", "quit"]:
+            break
+
+        result = run_search(query, repo_name=repo)
+
+        if not result:
+            print("No results.\n")
+            continue
+
+        chunks = result["chunks"]
+
+        # STREAMING
+        for token in engine.stream(query, chunks):
+            print(token, end="", flush=True)
+
+        print("\n")

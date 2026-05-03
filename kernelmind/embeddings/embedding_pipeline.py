@@ -1,9 +1,12 @@
 import os
+
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Force CPU-only for embeddings
 
-from sentence_transformers import SentenceTransformer
-from kernelmind.vector_store.chroma_store import VectorStore
 import hashlib
+
+from sentence_transformers import SentenceTransformer
+
+from kernelmind.vector_store.chroma_store import VectorStore
 
 
 class EmbeddingPipeline:
@@ -54,3 +57,13 @@ class EmbeddingPipeline:
 
         # Store results in Chroma
         self.store.add(ids, embeddings, texts, metas)
+
+    def embed(self, texts: list[str]):
+        if not texts:
+            return []
+
+        return self.model.encode(
+            texts,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )

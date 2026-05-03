@@ -1,13 +1,15 @@
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.markdown import Markdown
 from rich.text import Text
 
 console = Console()
 
+
 def render_heading(text):
     console.print(f"\n[bold deep_sky_blue3]{text}[/bold deep_sky_blue3]\n")
+
 
 def render_answer(answer: str):
     """Render the final synthesized answer nicely."""
@@ -49,6 +51,8 @@ def render_chunk(chunk):
             word_wrap=False,
         )
     console.print(Panel(syntax, title=header, border_style="blue"))
+
+
 def render_full_output(answer, chunks):
     render_heading("🔎 KernelMind Answer")
     render_answer(answer)
