@@ -1,5 +1,10 @@
 from retrieval.expand import expand_context
 from retrieval.rank import rank_expansion_results
+from retrieval.rerank import CrossEncoderReranker
+
+reranker = CrossEncoderReranker(
+    device="cuda",
+)
 
 
 def retrieve_context(
@@ -43,12 +48,33 @@ def retrieve_context(
     # Graph Ranking
     # -----------------------------------
 
+    # ranked = rank_expansion_results(
+    #     expanded_nodes=expanded,
+    #     graph=runtime.graph,
+    #     query=query,
+    # )
+    # -----------------------------------
+    # Graph Ranking
+    # -----------------------------------
+
     ranked = rank_expansion_results(
         expanded_nodes=expanded,
         graph=runtime.graph,
         query=query,
     )
 
+    # -----------------------------------
+    # Cross-Encoder Reranking
+    # -----------------------------------
+
+    reranked = runtime.reranker.rerank(
+        query=query,
+        candidates=ranked[:30],
+        chunk_lookup=runtime.chunk_lookup,
+        top_k=final_top_k,
+    )
+
+    return reranked
     # -----------------------------------
     # Final Top-K
     # -----------------------------------

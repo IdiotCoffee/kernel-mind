@@ -1,28 +1,30 @@
 from collections import defaultdict
 from typing import List
 
-from db.models import CodeChunk
-from retrieval.bm25 import BM25Retriever
-from retrieval.embeddings import EmbeddingRetriever
+# from db.models import CodeChunk
+# from retrieval.bm25 import BM25Retriever
+# from retrieval.embeddings import EmbeddingRetriever
 
 
 class HybridRetriever:
     def __init__(
         self,
-        chunks: List[CodeChunk],
-        device: str = "cuda",
+        embedding_retriever,
+        bm25_retriever,
     ):
 
-        self.chunks = chunks
+        # self.chunks = chunks
 
-        self.embedding_retriever = EmbeddingRetriever(
-            chunks=chunks,
-            device=device,
-        )
+        # self.embedding_retriever = EmbeddingRetriever(
+        #     chunks=chunks,
+        #     device=device,
+        # )
 
-        self.bm25_retriever = BM25Retriever(
-            chunks=chunks,
-        )
+        # self.bm25_retriever = BM25Retriever(
+        #     chunks=chunks,
+        # )
+        self.embedding_retriever = embedding_retriever
+        self.bm25_retriever = bm25_retriever
 
     def reciprocal_rank_fusion(
         self,

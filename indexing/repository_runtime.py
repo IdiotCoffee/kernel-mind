@@ -3,6 +3,7 @@ import json
 from retrieval.bm25 import BM25Retriever
 from retrieval.embeddings import EmbeddingRetriever
 from retrieval.hybrid import HybridRetriever
+from retrieval.rerank import CrossEncoderReranker
 from storage.manifest import build_manifest
 from storage.paths import ensure_repo_dirs
 from storage.persistence import (
@@ -63,8 +64,15 @@ class RepositoryRuntime:
             chunks=chunks,
         )
 
+        # self.hybrid_retriever = HybridRetriever(
+        #     chunks=chunks,
+        #     device=device,
+        # )
         self.hybrid_retriever = HybridRetriever(
-            chunks=chunks,
+            embedding_retriever=self.embedding_retriever,
+            bm25_retriever=self.bm25_retriever,
+        )
+        self.reranker = CrossEncoderReranker(
             device=device,
         )
 
