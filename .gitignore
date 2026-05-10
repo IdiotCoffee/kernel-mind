@@ -1,6 +1,4 @@
-# ============================
-# Python cache / temp files
-# ============================
+.kernelmind
 __pycache__/
 *.py[cod]
 *.pyc
@@ -10,40 +8,13 @@ __pycache__/
 # ============================
 .kernelmind/
 .env/
+.env
 .env*/
 venv/
 venv*/
 
 # ============================
 # Local repos downloaded by KernelMind
-# ============================
+# ============================repos/
+kernelmind-v2/
 repos/
-
-# ============================
-# Debug / logs / misc
-# ============================
-*.log
-*.tmp
-*.swp
-*.swo
-
-# ============================
-# Chroma DB files
-# ============================
-.chromadb/
-
-# ============================
-# Node / JS parser
-# ============================
-node_modules/
-kernelmind/parsers/js/node_modules/
-# ignore ONLY the root package-lock.json, not the one packaged in the library
-/package-lock.json
-
-# ============================
-# Python packaging (build artifacts)
-# ============================
-*.egg-info/
-kernelmind.egg-info/
-dist/
-build/
