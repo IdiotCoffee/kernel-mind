@@ -2,6 +2,8 @@ from typing import List
 
 from sentence_transformers import CrossEncoder
 
+DEBUG = False
+
 
 class CrossEncoderReranker:
     def __init__(
@@ -104,7 +106,7 @@ class CrossEncoderReranker:
             # -----------------------------------
 
             # final_score = item["score"] * 0.4 + normalized_cross * 0.6
-            final_score = item["score"] * 0.4 + normalized_cross_score * 0.6
+            final_score = item["score"] * 0.7 + normalized_cross_score * 0.3
             reranked.append(
                 {
                     **item,
@@ -128,18 +130,19 @@ class CrossEncoderReranker:
             key=lambda x: x["final_score"],
             reverse=True,
         )
-        print("\nRERANK DEBUG:\n")
+        if DEBUG:
+            print("\nRERANK DEBUG:\n")
 
-        for item in reranked[:10]:
-            print(
-                item["fqn"],
-                "| graph =",
-                round(item["score"], 4),
-                "| cross =",
-                round(item["cross_score"], 4),
-                "| norm =",
-                round(item["normalized_cross_score"], 4),
-                "| final =",
-                round(item["final_score"], 4),
-            )
+            for item in reranked[:10]:
+                print(
+                    item["fqn"],
+                    "| graph =",
+                    round(item["score"], 4),
+                    "| cross =",
+                    round(item["cross_score"], 4),
+                    "| norm =",
+                    round(item["normalized_cross_score"], 4),
+                    "| final =",
+                    round(item["final_score"], 4),
+                )
         return reranked[:top_k]

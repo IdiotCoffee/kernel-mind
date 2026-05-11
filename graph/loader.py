@@ -68,7 +68,7 @@ def load_graph(collection: Collection) -> Dict[str, GraphNode]:
                 "password",
                 "security",
                 "login",
-                "user",
+                # "user",
             ]
 
             for pattern in strong_patterns:

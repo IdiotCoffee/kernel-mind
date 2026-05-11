@@ -1,8 +1,9 @@
 import heapq
 import math
-from typing import Dict, List, Set
+from typing import Dict, List
 
 from db.models import GraphNode
+from retrieval.rank import compute_query_overlap
 
 DEPTH_DECAY = {
     0: 1.0,
@@ -27,34 +28,40 @@ def compute_weighted_connectivity(node) -> float:
 def expand_context(
     seed_results: List[dict],
     graph: Dict[str, GraphNode],
+    query: str,
     max_depth: int = 2,
     max_nodes: int = 25,
 ) -> List[dict]:
     """
-    Relevance-aware graph expansion.
+    Query-aware graph expansion.
 
-    Expansion score propagates through graph
-    with depth-based decay.
+    Expansion now incorporates:
+    - propagation score
+    - semantic edge weights
+    - depth decay
+    - query-conditioned traversal boosts
 
-    Higher-confidence retrieval seeds influence
-    graph expansion more strongly.
+    This helps preserve:
+    - workflow coherence
+    - query locality
+    - semantic intent alignment
     """
 
-    visited: Set[str] = set()
+    best_scores = {}
 
     results: List[dict] = []
 
-    # -----------------------------------
+    # -------------------------------------------------
     # Priority queue
     #
-    # (-score, depth, fqn)
-    # -----------------------------------
+    # (-score, depth, fqn, propagated_score)
+    # -------------------------------------------------
 
     queue = []
 
-    # -----------------------------------
+    # -------------------------------------------------
     # Seed queue
-    # -----------------------------------
+    # -------------------------------------------------
 
     for item in seed_results:
         chunk = item["chunk"]
@@ -71,9 +78,9 @@ def expand_context(
             ),
         )
 
-    # -----------------------------------
+    # -------------------------------------------------
     # Expansion loop
-    # -----------------------------------
+    # -------------------------------------------------
 
     while queue and len(results) < max_nodes:
         (
@@ -83,26 +90,31 @@ def expand_context(
             propagated_score,
         ) = heapq.heappop(queue)
 
-        if current_fqn in visited:
+        # -------------------------------------------------
+        # Strongest-path retention
+        # -------------------------------------------------
+
+        existing = best_scores.get(current_fqn)
+
+        if existing is not None and existing >= propagated_score:
             continue
 
-        visited.add(current_fqn)
+        best_scores[current_fqn] = propagated_score
 
         node = graph.get(current_fqn)
 
         if not node:
             continue
 
-        # -----------------------------------
+        # -------------------------------------------------
         # Node degree
-        # -----------------------------------
+        # -------------------------------------------------
 
-        # degree = len(node.calls) + len(node.called_by)
         degree = compute_weighted_connectivity(node)
 
-        # -----------------------------------
+        # -------------------------------------------------
         # Store expanded node
-        # -----------------------------------
+        # -------------------------------------------------
 
         results.append(
             {
@@ -119,23 +131,56 @@ def expand_context(
             }
         )
 
-        # -----------------------------------
+        # -------------------------------------------------
+        # Debug
+        # -------------------------------------------------
+
+        print(
+            f"[EXPAND] "
+            f"depth={depth} "
+            f"score={round(propagated_score, 4)} "
+            f"node={current_fqn}"
+        )
+
+        # -------------------------------------------------
         # Stop expansion
-        # -----------------------------------
+        # -------------------------------------------------
 
         if depth >= max_depth:
             continue
 
-        # -----------------------------------
-        # Expand callees
-        # -----------------------------------
+        # =================================================
+        # Expand CALLEES
+        #
+        # Forward execution flow
+        # =================================================
 
         for edge in node.calls:
-            if edge.target not in visited:
-                edge_adjusted_score = (
-                    propagated_score * edge.weight * get_decay(depth + 1)
-                )
+            # ---------------------------------------------
+            # Query-aware traversal boost
+            # ---------------------------------------------
 
+            query_overlap = compute_query_overlap(
+                query=query,
+                fqn=edge.target,
+            )
+
+            query_multiplier = 1.0 + min(
+                query_overlap,
+                1.5,
+            )
+
+            # ---------------------------------------------
+            # Propagation
+            # ---------------------------------------------
+
+            edge_adjusted_score = (
+                propagated_score * edge.weight * get_decay(depth + 1) * query_multiplier
+            )
+
+            existing = best_scores.get(edge.target)
+
+            if existing is None or edge_adjusted_score > existing:
                 heapq.heappush(
                     queue,
                     (
@@ -145,9 +190,15 @@ def expand_context(
                         edge_adjusted_score,
                     ),
                 )
-        # -----------------------------------
-        # Expand callers
-        # -----------------------------------
+
+        # =================================================
+        # Expand CALLERS
+        #
+        # Reverse traversal
+        #
+        # Caller expansion intentionally weaker
+        # to reduce semantic drift.
+        # =================================================
 
         for edge in node.called_by:
             target_node = graph.get(edge.target)
@@ -155,15 +206,44 @@ def expand_context(
             if not target_node:
                 continue
 
+            # ---------------------------------------------
+            # Connectivity hub suppression
+            # ---------------------------------------------
+
             connectivity = len(target_node.calls) + len(target_node.called_by)
 
             hub_penalty = 1 / math.log2(connectivity + 2)
 
-            if edge.target not in visited:
-                edge_adjusted_score = (
-                    propagated_score * edge.weight * get_decay(depth + 1) * hub_penalty
-                )
+            # ---------------------------------------------
+            # Query-aware traversal boost
+            # ---------------------------------------------
 
+            query_overlap = compute_query_overlap(
+                query=query,
+                fqn=edge.target,
+            )
+
+            query_multiplier = 1.0 + min(
+                query_overlap,
+                1.25,
+            )
+
+            # ---------------------------------------------
+            # Propagation
+            # ---------------------------------------------
+
+            edge_adjusted_score = (
+                propagated_score
+                * edge.weight
+                * get_decay(depth + 1)
+                * hub_penalty
+                * query_multiplier
+                * 0.45
+            )
+
+            existing = best_scores.get(edge.target)
+
+            if existing is None or edge_adjusted_score > existing:
                 heapq.heappush(
                     queue,
                     (

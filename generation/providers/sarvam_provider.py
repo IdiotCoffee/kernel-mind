@@ -53,3 +53,7 @@ class SarvamProvider(LLMProvider):
 
             if content:
                 yield content
+
+
+# This is explain workflow flow - a user can ask any type of question, will my architecture hold up for that? I will also need to add something like a "should I evel look at the code for this query?" handler - I dont want to respond to a "hi" with this.
+# Also i'll need the confidence stuff...  low confidence actually means the functionality may not exist in the codebase?

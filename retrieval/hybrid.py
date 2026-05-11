@@ -1,9 +1,9 @@
 from collections import defaultdict
 from typing import List
 
-# from db.models import CodeChunk
-# from retrieval.bm25 import BM25Retriever
-# from retrieval.embeddings import EmbeddingRetriever
+from retrieval.rank import compute_query_overlap
+
+DEBUG = False
 
 
 class HybridRetriever:
@@ -13,18 +13,12 @@ class HybridRetriever:
         bm25_retriever,
     ):
 
-        # self.chunks = chunks
-
-        # self.embedding_retriever = EmbeddingRetriever(
-        #     chunks=chunks,
-        #     device=device,
-        # )
-
-        # self.bm25_retriever = BM25Retriever(
-        #     chunks=chunks,
-        # )
         self.embedding_retriever = embedding_retriever
         self.bm25_retriever = bm25_retriever
+
+    # =====================================================
+    # Reciprocal Rank Fusion
+    # =====================================================
 
     def reciprocal_rank_fusion(
         self,
@@ -84,25 +78,121 @@ class HybridRetriever:
 
         return fused
 
+    # =====================================================
+    # Query-Aware Seed Reranking
+    # =====================================================
+
+    def rerank_by_query_alignment(
+        self,
+        query: str,
+        candidates: List[dict],
+    ) -> List[dict]:
+        """
+        Re-anchor hybrid retrieval results
+        to query intent BEFORE graph expansion.
+
+        This improves:
+        - workflow locality
+        - semantic precision
+        - seed quality
+        """
+
+        reranked = []
+
+        for item in candidates:
+            chunk = item["chunk"]
+
+            base_score = item["score"]
+
+            # -----------------------------------
+            # Query-symbol overlap
+            # -----------------------------------
+
+            overlap_score = compute_query_overlap(
+                query=query,
+                fqn=chunk.fqn,
+            )
+
+            # -----------------------------------
+            # Query-aware blended score
+            # -----------------------------------
+
+            final_score = base_score * 0.7 + overlap_score * 0.3
+
+            reranked.append(
+                {
+                    **item,
+                    "score": round(final_score, 4),
+                    "overlap_score": round(overlap_score, 4),
+                }
+            )
+
+        reranked.sort(
+            key=lambda x: x["score"],
+            reverse=True,
+        )
+
+        # -----------------------------------
+        # Debug
+        # -----------------------------------
+        if DEBUG:
+            print("\nHYBRID QUERY RERANK:\n")
+
+            for item in reranked[:10]:
+                print(
+                    item["fqn"],
+                    "| base =",
+                    round(item["score"], 4),
+                    "| overlap =",
+                    item["overlap_score"],
+                )
+
+        return reranked
+
+    # =====================================================
+    # Search
+    # =====================================================
+
     def search(
         self,
         query: str,
         top_k: int = 10,
     ) -> List[dict]:
 
+        # -----------------------------------
+        # BM25 retrieval
+        # -----------------------------------
+
         bm25_results = self.bm25_retriever.search(
             query=query,
             top_k=top_k,
         )
+
+        # -----------------------------------
+        # Embedding retrieval
+        # -----------------------------------
 
         embedding_results = self.embedding_retriever.search(
             query=query,
             top_k=top_k,
         )
 
+        # -----------------------------------
+        # Hybrid fusion
+        # -----------------------------------
+
         fused = self.reciprocal_rank_fusion(
             bm25_results=bm25_results,
             embedding_results=embedding_results,
         )
 
-        return fused[:top_k]
+        # -----------------------------------
+        # Query-aware reranking
+        # -----------------------------------
+
+        reranked = self.rerank_by_query_alignment(
+            query=query,
+            candidates=fused,
+        )
+
+        return reranked[:top_k]

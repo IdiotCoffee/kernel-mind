@@ -1,4 +1,5 @@
 import math
+import re
 from typing import List
 
 from db.models import GraphNode
@@ -27,15 +28,74 @@ def compute_weighted_connectivity(node) -> float:
 
 def tokenize(text: str) -> List[str]:
     """
-    Simple identifier-aware tokenizer.
+    Repository-aware tokenizer.
 
-    Converts:
-        create_access_token
-    into:
-        ["create", "access", "token"]
+    Handles:
+    - snake_case
+    - dotted paths
+    - camelCase
+    - kebab-case
+
+    Example:
+        backend.app.api.routes.login.login_access_token
+
+    becomes:
+        [
+            "backend",
+            "app",
+            "api",
+            "routes",
+            "login",
+            "login",
+            "access",
+            "token",
+        ]
     """
 
-    return [token.lower() for token in text.replace("_", " ").split()]
+    # -----------------------------------
+    # Split camelCase
+    # -----------------------------------
+
+    text = re.sub(
+        r"([a-z0-9])([A-Z])",
+        r"\1 \2",
+        text,
+    )
+
+    # -----------------------------------
+    # Replace separators
+    # -----------------------------------
+
+    separators = [
+        ".",
+        "_",
+        "-",
+        "/",
+        "\\",
+        ":",
+        "(",
+        ")",
+        "[",
+        "]",
+        "{",
+        "}",
+        ",",
+    ]
+
+    for sep in separators:
+        text = text.replace(sep, " ")
+
+    # -----------------------------------
+    # Normalize whitespace
+    # -----------------------------------
+
+    text = re.sub(r"\s+", " ", text)
+
+    # -----------------------------------
+    # Final tokens
+    # -----------------------------------
+
+    return [token.lower() for token in text.strip().split() if token.strip()]
 
 
 # =========================================================

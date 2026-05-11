@@ -40,6 +40,7 @@ def retrieve_context(
     expanded = expand_context(
         seed_results=retrieval_results,
         graph=runtime.graph,
+        query=query,
         max_depth=expansion_depth,
         max_nodes=expansion_nodes,
     )

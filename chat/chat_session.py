@@ -1,105 +1,76 @@
+import os
+
+from dotenv import load_dotenv
+
+from generation.providers.sarvam_provider import SarvamProvider
 from retrieval.pipeline import retrieve_context
+from routing.classifier import QueryClassifier
+from routing.executor import QueryExecutor
+
+load_dotenv()
 
 
 def start_chat_session(runtime):
-    """
-    Interactive repository chat session.
-    """
 
-    print(f"\nConnected to: {runtime.repo_id}")
+    print(f"\nConnected to: {runtime.repo_id}\nType 'exit' to quit.\n")
 
-    print("Type 'exit' to quit.\n")
+    # =====================================================
+    # Provider
+    # =====================================================
+
+    provider = SarvamProvider(api_key=os.getenv("SARVAM_API_KEY", ""))
+
+    # =====================================================
+    # Router
+    # =====================================================
+
+    classifier = QueryClassifier()
+
+    # =====================================================
+    # Executor
+    # =====================================================
+
+    executor = QueryExecutor(
+        runtime=runtime,
+        provider=provider,
+    )
+
+    # =====================================================
+    # Chat Loop
+    # =====================================================
 
     while True:
-        query = input("> ").strip()
+        query = input("\n> ").strip()
 
-        if not query:
-            continue
+        # -------------------------------------------------
+        # Exit
+        # -------------------------------------------------
 
-        if query.lower() == "exit":
+        if query.lower() in ["exit", "quit"]:
             print("\nbye bye!\n")
 
             break
 
-        # -----------------------------------
-        # Full Retrieval Pipeline
-        # -----------------------------------
+        # -------------------------------------------------
+        # Empty Query
+        # -------------------------------------------------
 
-        results = retrieve_context(
+        if not query:
+            continue
+
+        # -------------------------------------------------
+        # Query Classification
+        # -------------------------------------------------
+
+        mode = classifier.classify(query)
+
+        print(f"\n[ROUTER] mode = {mode.value}\n")
+
+        # -------------------------------------------------
+        # Execute
+        # -------------------------------------------------
+
+        executor.execute(
             query=query,
-            runtime=runtime,
+            mode=mode,
         )
-
-        print("\nTop Results:\n")
-
-        for idx, item in enumerate(
-            results,
-            start=1,
-        ):
-            chunk = runtime.chunk_lookup.get(item["fqn"])
-
-            if not chunk:
-                continue
-
-            print("=" * 80)
-
-            print(f"[{idx}] {chunk.fqn}")
-
-            print(f"TYPE: {chunk.type}")
-
-            print(f"SCORE: {round(item['score'], 4)}")
-
-            print(f"DEPTH: {item['depth']}")
-
-            print(f"PROPAGATED: {round(item['propagated_score'], 4)}")
-
-            print(f"PATH: {chunk.file_path}")
-
-            print()
-
-            # -----------------------------------
-            # Docstring
-            # -----------------------------------
-
-            if chunk.docstring:
-                print("DOCSTRING:\n")
-
-                print(chunk.docstring)
-
-                print()
-
-            # -----------------------------------
-            # Code Preview
-            # -----------------------------------
-
-            print("CODE:\n")
-
-            print(chunk.code[:600])
-
-            print()
-
-            # -----------------------------------
-            # Calls
-            # -----------------------------------
-
-            if item["calls"]:
-                print("CALLS:\n")
-
-                for edge in item["calls"][:5]:
-                    print(f"  -> {edge.target} [{edge.edge_type}] (w={edge.weight})")
-
-                print()
-
-            # -----------------------------------
-            # Called By
-            # -----------------------------------
-
-            if item["called_by"]:
-                print("CALLED BY:\n")
-
-                for edge in item["called_by"][:5]:
-                    print(f"  <- {edge.target} [{edge.edge_type}] (w={edge.weight})")
-
-                print()
-
-        print()
