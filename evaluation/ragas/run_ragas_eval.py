@@ -1,0 +1,148 @@
+from pathlib import Path
+
+from ragas import evaluate
+from ragas.metrics import (
+    Faithfulness,
+    LLMContextPrecisionWithoutReference,
+    LLMContextRecall,
+    ResponseRelevancy,
+)
+
+# =========================================================
+# Runtime Construction
+# =========================================================
+from download.scan_repo import get_python_files
+
+# =========================================================
+# RAGAS Helpers
+# =========================================================
+from evaluation.ragas.build_dataset import (
+    build_ragas_dataset,
+)
+from evaluation.ragas.generate_eval_samples import (
+    generate_eval_samples,
+)
+from graph.build_graph import build_graph
+from indexing.build_repository import (
+    build_repository,
+)
+from parser.python.parser import (
+    parse_python_file,
+)
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPO_PATH = "repos/full-stack-fastapi-template"
+
+BENCHMARK_PATH = "evaluation/datasets/auth_workflows.json"
+
+# =========================================================
+# LOAD CHUNKS
+# =========================================================
+
+
+def load_chunks(repo_path):
+
+    chunks = []
+
+    files = list(get_python_files(repo_path))
+
+    print(f"\nPython files found: {len(files)}")
+
+    for file_path in files:
+        try:
+            file_chunks = parse_python_file(
+                path=file_path,
+                repo_path=repo_path,
+            )
+
+            chunks.extend(file_chunks)
+
+        except Exception as e:
+            print("\nFailed parsing:")
+            print(file_path)
+            print(e)
+
+    return chunks
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+
+def main():
+
+    # =====================================================
+    # Build Runtime
+    # =====================================================
+
+    print("\nBuilding runtime for RAGAS...\n")
+
+    chunks = load_chunks(REPO_PATH)
+
+    graph = build_graph(chunks)
+
+    result = build_repository(
+        repo_id="ragas_eval_repo",
+        chunks=chunks,
+        graph=graph,
+        device="cuda",
+    )
+
+    runtime = result["runtime"]
+
+    print("\nRuntime ready.\n")
+
+    # =====================================================
+    # Generate Samples
+    # =====================================================
+
+    samples = generate_eval_samples(
+        runtime=runtime,
+        benchmark_path=BENCHMARK_PATH,
+    )
+
+    # =====================================================
+    # Build Dataset
+    # =====================================================
+
+    dataset = build_ragas_dataset(samples)
+
+    # =====================================================
+    # Run RAGAS
+    # =====================================================
+
+    print("\nRunning RAGAS evaluation...\n")
+
+    results = evaluate(
+        dataset=dataset,
+        metrics=[
+            Faithfulness(),
+            ResponseRelevancy(),
+            LLMContextPrecisionWithoutReference(),
+            LLMContextRecall(),
+        ],
+    )
+
+    # =====================================================
+    # Results
+    # =====================================================
+
+    print("\n======================================")
+    print("RAGAS RESULTS")
+    print("======================================\n")
+
+    print(results)
+
+    print("\n======================================\n")
+
+
+# =========================================================
+# ENTRYPOINT
+# =========================================================
+
+if __name__ == "__main__":
+    main()

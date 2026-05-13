@@ -44,6 +44,18 @@ def retrieve_context(
         max_depth=expansion_depth,
         max_nodes=expansion_nodes,
     )
+    # expanded = [
+    #     {
+    #         "fqn": item["chunk"].fqn,
+    #         "depth": 0,
+    #         "type": item["chunk"].type,
+    #         "calls": [],
+    #         "called_by": [],
+    #         "propagated_score": item["score"],
+    #         "degree": 0,
+    #     }
+    #     for item in retrieval_results
+    # ]
 
     # -----------------------------------
     # Graph Ranking
@@ -76,6 +88,7 @@ def retrieve_context(
     )
 
     return reranked
+    # return ranked[:final_top_k]
     # -----------------------------------
     # Final Top-K
     # -----------------------------------

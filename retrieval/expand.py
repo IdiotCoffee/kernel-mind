@@ -5,6 +5,7 @@ from typing import Dict, List
 from db.models import GraphNode
 from retrieval.rank import compute_query_overlap
 
+DEBUG = False
 DEPTH_DECAY = {
     0: 1.0,
     1: 0.75,
@@ -33,18 +34,24 @@ def expand_context(
     max_nodes: int = 25,
 ) -> List[dict]:
     """
-    Query-aware graph expansion.
+        Query-aware graph expansion.
 
-    Expansion now incorporates:
-    - propagation score
-    - semantic edge weights
-    - depth decay
-    - query-conditioned traversal boosts
+        Expansion now incorporates:
+        - propagation score
+        - semantic edge weights
+        - depth decay
+        - query-conditioned traversal boosts
 
-    This helps preserve:
-    - workflow coherence
-    - query locality
-    - semantic intent alignment
+        This helprint(
+                        f"[EXPAND] "
+                        f"depth={depth} "
+                        f"score={round(propagated_score, 4)} "
+                        f"node={current_fqn}"
+                    )
+    ps preserve:
+        - workflow coherence
+        - query locality
+        - semantic intent alignment
     """
 
     best_scores = {}
@@ -53,7 +60,14 @@ def expand_context(
 
     # -------------------------------------------------
     # Priority queue
-    #
+    # if DEBUG:
+    #     print(
+    #         f"[EXPAND] "
+    #         f"depth={depth} "
+    #         f"score={round(propagated_score, 4)} "
+    #         f"node={current_fqn}"
+    #     )
+
     # (-score, depth, fqn, propagated_score)
     # -------------------------------------------------
 
@@ -134,13 +148,13 @@ def expand_context(
         # -------------------------------------------------
         # Debug
         # -------------------------------------------------
-
-        print(
-            f"[EXPAND] "
-            f"depth={depth} "
-            f"score={round(propagated_score, 4)} "
-            f"node={current_fqn}"
-        )
+        if DEBUG:
+            print(
+                f"[EXPAND] "
+                f"depth={depth} "
+                f"score={round(propagated_score, 4)} "
+                f"node={current_fqn}"
+            )
 
         # -------------------------------------------------
         # Stop expansion

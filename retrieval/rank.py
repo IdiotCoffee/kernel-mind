@@ -1,6 +1,4 @@
 import math
-import re
-from typing import List
 
 from db.models import GraphNode
 from retrieval.finetuning import (
@@ -12,6 +10,10 @@ from retrieval.finetuning import (
     QUERY_MATCH_WEIGHT,
     TYPE_WEIGHTS,
 )
+from retrieval.operations import (
+    compute_operation_match_score,
+)
+from retrieval.tokenize import tokenize
 
 # =========================================================
 # Tokenization
@@ -24,83 +26,6 @@ def compute_weighted_connectivity(node) -> float:
     incoming = sum(edge.weight for edge in node.called_by)
 
     return outgoing + incoming
-
-
-def tokenize(text: str) -> List[str]:
-    """
-    Repository-aware tokenizer.
-
-    Handles:
-    - snake_case
-    - dotted paths
-    - camelCase
-    - kebab-case
-
-    Example:
-        backend.app.api.routes.login.login_access_token
-
-    becomes:
-        [
-            "backend",
-            "app",
-            "api",
-            "routes",
-            "login",
-            "login",
-            "access",
-            "token",
-        ]
-    """
-
-    # -----------------------------------
-    # Split camelCase
-    # -----------------------------------
-
-    text = re.sub(
-        r"([a-z0-9])([A-Z])",
-        r"\1 \2",
-        text,
-    )
-
-    # -----------------------------------
-    # Replace separators
-    # -----------------------------------
-
-    separators = [
-        ".",
-        "_",
-        "-",
-        "/",
-        "\\",
-        ":",
-        "(",
-        ")",
-        "[",
-        "]",
-        "{",
-        "}",
-        ",",
-    ]
-
-    for sep in separators:
-        text = text.replace(sep, " ")
-
-    # -----------------------------------
-    # Normalize whitespace
-    # -----------------------------------
-
-    text = re.sub(r"\s+", " ", text)
-
-    # -----------------------------------
-    # Final tokens
-    # -----------------------------------
-
-    return [token.lower() for token in text.strip().split() if token.strip()]
-
-
-# =========================================================
-# Query / Symbol Overlap
-# =========================================================
 
 
 def compute_query_overlap(
@@ -173,6 +98,14 @@ def score_node(
     # -----------------------------------------------------
 
     score += compute_query_overlap(
+        query=query,
+        fqn=node.fqn,
+    )
+    # -----------------------------------------------------
+    # Operation-aware anchoring
+    # -----------------------------------------------------
+
+    score += compute_operation_match_score(
         query=query,
         fqn=node.fqn,
     )
@@ -249,6 +182,14 @@ def rank_expansion_results(
         # -------------------------------------------------
 
         score += compute_query_overlap(
+            query=query,
+            fqn=node["fqn"],
+        )
+        # -------------------------------------------------
+        # Operation-aware specificity boost
+        # -------------------------------------------------
+
+        score += compute_operation_match_score(
             query=query,
             fqn=node["fqn"],
         )
