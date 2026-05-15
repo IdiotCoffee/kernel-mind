@@ -224,6 +224,13 @@ KernelMind includes a Textual-based terminal interface featuring:
 * streamed grounded answers
 * workflow visualization
 
+<p align="center">
+  <img src="assets/home-page.png" width="900"/>
+</p>
+<p align="center">
+  <img src="assets/actual-terminal.png" width="900"/>
+</p>
+
 ---
 
 # RAGAS Evaluation

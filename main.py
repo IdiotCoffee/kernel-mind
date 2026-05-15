@@ -7,18 +7,13 @@ from chat.chat_session import (
 from download.load_repo import (
     clone_repo,
 )
-from download.scan_repo import (
-    get_python_files,
-)
 from graph.build_graph import (
     build_graph,
 )
 from indexing.build_repository import (
     build_repository,
 )
-from parser.python.parser import (
-    parse_python_file,
-)
+from utils.tui_helpers import extract_repo_name, load_chunks
 
 # =====================================================
 # Config
@@ -29,52 +24,6 @@ DEFAULT_REPO = "https://github.com/fastapi/full-stack-fastapi-template"
 DEVICE = "cuda"
 
 REBUILD = True
-
-# =====================================================
-# Helpers
-# =====================================================
-
-
-def extract_repo_name(
-    repo_url: str,
-):
-
-    name = repo_url.rstrip("/").split("/")[-1]
-
-    if name.endswith(".git"):
-        name = name[:-4]
-
-    return name
-
-
-def load_chunks(
-    repo_path,
-):
-
-    chunks = []
-
-    files = list(get_python_files(repo_path))
-
-    print(f"\nPython files found: {len(files)}")
-
-    for file_path in files:
-        try:
-            file_chunks = parse_python_file(
-                path=file_path,
-                repo_path=repo_path,
-            )
-
-            chunks.extend(file_chunks)
-
-        except Exception as e:
-            print("\nFailed parsing:")
-
-            print(file_path)
-
-            print(e)
-
-    return chunks
-
 
 # =====================================================
 # Main
