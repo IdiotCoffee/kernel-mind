@@ -7,11 +7,18 @@ from retrieval.operations import compute_operation_match_score
 from retrieval.rank import compute_query_overlap
 
 DEBUG = False
+# DEPTH_DECAY = {
+#     0: 1.0,
+#     1: 0.75,
+#     2: 0.45,
+#     3: 0.20,
+# }
+
 DEPTH_DECAY = {
     0: 1.0,
-    1: 0.75,
-    2: 0.45,
-    3: 0.20,
+    1: 0.9,
+    2: 0.7,
+    3: 0.5,
 }
 
 
@@ -182,8 +189,8 @@ def expand_context(
 
             # Strong mismatch:
             # skip semantic sibling pollution
-            if operation_score < -0.2:
-                continue
+            # if operation_score < -0.2:
+            #     continue
 
             # ---------------------------------------------
             # Query-aware traversal boost
@@ -252,8 +259,8 @@ def expand_context(
 
             # Strong mismatch:
             # suppress semantic sibling drift
-            if operation_score < -0.2:
-                continue
+            # if operation_score < -0.2:
+            #     continue
 
             # ---------------------------------------------
             # Connectivity hub suppression

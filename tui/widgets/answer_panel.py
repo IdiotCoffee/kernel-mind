@@ -1,5 +1,5 @@
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Markdown, Static
 
 
 class AnswerPanel(Vertical):
@@ -11,15 +11,31 @@ class AnswerPanel(Vertical):
             classes="panel-title",
         )
 
-        self.retrieval_log = RichLog(
-            highlight=True,
-            markup=True,
+        self.current_text = ""
+
+        self.answer_widget = Markdown(
+            "",
+            # markup=True,
+            id="answer-text",
         )
 
-        yield self.retrieval_log
+        with VerticalScroll():
+            yield self.answer_widget
+
+    def clear_answer(self):
+
+        self.current_text = ""
+
+        self.answer_widget.update("")
+
+    def stream_token(self, token: str):
+
+        self.current_text += str(token)
+
+        self.answer_widget.update(self.current_text)
 
     def update_answer(self, answer: str):
 
-        self.retrieval_log.clear()
+        self.current_text = answer
 
-        self.retrieval_log.write(f"[bold white]{answer}[/bold white]")
+        self.answer_widget.update(self.current_text)

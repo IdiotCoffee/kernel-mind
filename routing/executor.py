@@ -30,6 +30,61 @@ class QueryExecutor:
     # =====================================================
     # Execute Query
     # =====================================================
+    def execute_with_stream(
+        self,
+        query: str,
+        mode: QueryMode,
+    ):
+
+        if mode == QueryMode.WORKFLOW:
+            results = retrieve_context(
+                query=query,
+                runtime=self.runtime,
+                retrieval_top_k=8,
+                expansion_depth=3,
+                expansion_nodes=60,
+                final_top_k=15,
+            )
+
+        elif mode == QueryMode.SYMBOL_LOOKUP:
+            results = retrieve_context(
+                query=query,
+                runtime=self.runtime,
+                retrieval_top_k=5,
+                expansion_depth=1,
+                expansion_nodes=10,
+                final_top_k=5,
+            )
+
+        else:
+            results = retrieve_context(
+                query=query,
+                runtime=self.runtime,
+                retrieval_top_k=7,
+                expansion_depth=2,
+                expansion_nodes=20,
+                final_top_k=10,
+            )
+
+        confidence = compute_confidence(results)
+
+        trace = build_reasoning_trace(results)
+
+        stream = self.answer_generator.generate(
+            query=query,
+            results=results,
+            runtime=self.runtime,
+            stream=True,
+            mode=mode,
+            confidence=confidence,
+        )
+
+        return {
+            "results": results,
+            "confidence": confidence,
+            "trace": trace,
+            "stream": stream,
+        }
 
     def execute(
         self,
