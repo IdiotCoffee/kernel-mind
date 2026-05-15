@@ -1,0 +1,67 @@
+Screen {
+    margin-bottom: 1;
+}
+
+#features {
+    color: #94a3b8;
+    margin-bottom: 2;
+}
+
+Button {
+    background: orange;
+    color: black;
+    text-style: bold;
+}
+
+#main-layout {
+    height: 1fr;
+}
+
+#left-column {
+    width: 35%;
+    padding: 1;
+}
+
+#right-column {
+    width: 65%;
+    padding: 1;
+}
+
+.panel-title {
+    color: orange;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+RetrievalPanel,
+GraphPanel,
+AnswerPanel,
+LogsPanel {
+    border: round #334155;
+    background: #111827;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+RichLog {
+    background: #020617;
+    color: white;
+    border: round #334155;
+}
+
+Input {
+    dock: bottom;
+    background: #111827;
+    color: white;
+    border: round orange;
+    margin: 1;
+}
+
+Input:focus {
+    border: round orange;
+}
+
+Input Cursor {
+    color: orange;
+    background: orange;
+}

@@ -208,12 +208,11 @@ Grounded Explanation:
         mode,
         confidence,
         stream=True,
+        evaluation_mode=False,
     ):
 
         context = build_context(
-            results=results,
-            runtime=runtime,
-            mode=mode,
+            results=results, runtime=runtime, mode=mode, evaluation_mode=evaluation_mode
         )
 
         prompt = self.build_prompt(

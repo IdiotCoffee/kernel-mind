@@ -24,10 +24,6 @@ def workflow_filter(results):
             item.get("score", 0),
         )
 
-        # =================================================
-        # Hard suppress noisy auth siblings
-        # =================================================
-
         noisy_patterns = [
             "recover_password",
             "reset_password",
@@ -41,21 +37,14 @@ def workflow_filter(results):
         if any(p in fqn for p in noisy_patterns):
             continue
 
-        # =================================================
-        # Prefer strong workflow evidence
-        # =================================================
-
         keep = False
 
-        # exact-ish matches
         if overlap >= 1.0:
             keep = True
 
-        # shallow graph neighbors
         elif depth <= 1 and score >= 1.0:
             keep = True
 
-        # very strong reranked nodes
         elif score >= 2.5:
             keep = True
 
@@ -70,10 +59,25 @@ def build_context(
     runtime,
     mode=None,
     max_chars: int = 12000,
+    evaluation_mode: bool = False,
 ):
     """
     Build structured repository evidence context.
+
+    evaluation_mode=True:
+    - shorter contexts
+    - less metadata
+    - smaller code windows
+    - RAGAS-friendly compression
     """
+
+    # =====================================================
+    # Evaluation Compression
+    # =====================================================
+
+    if evaluation_mode:
+        print("Values being truncated for evaluation")
+        max_chars = 5000
 
     # =====================================================
     # Mode-specific filtering
@@ -139,66 +143,95 @@ def build_context(
         section.append(f"FILE:\n{chunk.file_path}")
 
         # =================================================
-        # LINES
+        # Evaluation Mode
+        #
+        # Keep contexts compact
         # =================================================
 
-        section.append(f"LINES:\n{chunk.start_line}-{chunk.end_line}")
+        if evaluation_mode:
+            # ---------------------------------------------
+            # Minimal metadata
+            # ---------------------------------------------
+
+            if "depth" in item:
+                section.append(f"DEPTH:\n{item['depth']}")
+
+            # ---------------------------------------------
+            # Shortened code window
+            # ---------------------------------------------
+
+            code_limit = 500
+
+            section.append(f"CODE:\n{chunk.code[:code_limit]}")
 
         # =================================================
-        # MODULE
+        # Normal Interactive Mode
         # =================================================
 
-        section.append(f"MODULE:\n{chunk.module}")
+        else:
+            # ---------------------------------------------
+            # LINES
+            # ---------------------------------------------
 
-        # =================================================
-        # PARENT
-        # =================================================
+            section.append(f"LINES:\n{chunk.start_line}-{chunk.end_line}")
 
-        if chunk.parent_fqn:
-            section.append(f"PARENT:\n{chunk.parent_fqn}")
+            # ---------------------------------------------
+            # MODULE
+            # ---------------------------------------------
 
-        # =================================================
-        # CALLS
-        # =================================================
+            section.append(f"MODULE:\n{chunk.module}")
 
-        if chunk.calls:
-            calls_preview = "\n".join(chunk.calls[:8])
+            # ---------------------------------------------
+            # PARENT
+            # ---------------------------------------------
 
-            section.append(f"CALLS:\n{calls_preview}")
+            if chunk.parent_fqn:
+                section.append(f"PARENT:\n{chunk.parent_fqn}")
 
-        # =================================================
-        # IMPORTS
-        # =================================================
+            # ---------------------------------------------
+            # CALLS
+            # ---------------------------------------------
 
-        if chunk.imports:
-            imports_preview = "\n".join(
-                [f"{k} -> {v}" for k, v in list(chunk.imports.items())[:8]]
-            )
+            if chunk.calls:
+                calls_preview = "\n".join(chunk.calls[:8])
 
-            section.append(f"IMPORTS:\n{imports_preview}")
+                section.append(f"CALLS:\n{calls_preview}")
 
-        # =================================================
-        # DOCSTRING
-        # =================================================
+            # ---------------------------------------------
+            # IMPORTS
+            # ---------------------------------------------
 
-        if chunk.docstring:
-            section.append(f"DOCSTRING:\n{chunk.docstring}")
+            if chunk.imports:
+                imports_preview = "\n".join(
+                    [f"{k} -> {v}" for k, v in list(chunk.imports.items())[:8]]
+                )
 
-        # =================================================
-        # GRAPH INFO
-        # =================================================
+                section.append(f"IMPORTS:\n{imports_preview}")
 
-        if "depth" in item:
-            section.append(f"GRAPH_DEPTH:\n{item['depth']}")
+            # ---------------------------------------------
+            # DOCSTRING
+            # ---------------------------------------------
 
-        if "final_score" in item:
-            section.append(f"RETRIEVAL_SCORE:\n{round(item['final_score'], 4)}")
+            if chunk.docstring:
+                section.append(f"DOCSTRING:\n{chunk.docstring[:300]}")
 
-        # =================================================
-        # CODE
-        # =================================================
+            # ---------------------------------------------
+            # GRAPH INFO
+            # ---------------------------------------------
 
-        section.append(f"CODE:\n{chunk.code[:1500]}")
+            if "depth" in item:
+                section.append(f"GRAPH_DEPTH:\n{item['depth']}")
+
+            if "final_score" in item:
+                section.append(f"RETRIEVAL_SCORE:\n{round(item['final_score'], 4)}")
+
+            # ---------------------------------------------
+            # CODE
+            # ---------------------------------------------
+
+            code_limit = 1500
+
+            section.append(f"CODE:\n{chunk.code[:code_limit]}")
 
         # =================================================
         # Assemble

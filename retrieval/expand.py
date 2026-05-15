@@ -3,6 +3,7 @@ import math
 from typing import Dict, List
 
 from db.models import GraphNode
+from retrieval.operations import compute_operation_match_score
 from retrieval.rank import compute_query_overlap
 
 DEBUG = False
@@ -171,6 +172,20 @@ def expand_context(
 
         for edge in node.calls:
             # ---------------------------------------------
+            # Operation-aware traversal gating
+            # ---------------------------------------------
+
+            operation_score = compute_operation_match_score(
+                query=query,
+                fqn=edge.target,
+            )
+
+            # Strong mismatch:
+            # skip semantic sibling pollution
+            if operation_score < -0.2:
+                continue
+
+            # ---------------------------------------------
             # Query-aware traversal boost
             # ---------------------------------------------
 
@@ -191,6 +206,12 @@ def expand_context(
             edge_adjusted_score = (
                 propagated_score * edge.weight * get_decay(depth + 1) * query_multiplier
             )
+
+            # ---------------------------------------------
+            # Operation bonus
+            # ---------------------------------------------
+
+            edge_adjusted_score *= 1.0 + max(operation_score, 0) * 0.15
 
             existing = best_scores.get(edge.target)
 
@@ -218,6 +239,20 @@ def expand_context(
             target_node = graph.get(edge.target)
 
             if not target_node:
+                continue
+
+            # ---------------------------------------------
+            # Operation-aware traversal gating
+            # ---------------------------------------------
+
+            operation_score = compute_operation_match_score(
+                query=query,
+                fqn=edge.target,
+            )
+
+            # Strong mismatch:
+            # suppress semantic sibling drift
+            if operation_score < -0.2:
                 continue
 
             # ---------------------------------------------
@@ -254,6 +289,12 @@ def expand_context(
                 * query_multiplier
                 * 0.45
             )
+
+            # ---------------------------------------------
+            # Operation bonus
+            # ---------------------------------------------
+
+            edge_adjusted_score *= 1.0 + max(operation_score, 0) * 0.15
 
             existing = best_scores.get(edge.target)
 

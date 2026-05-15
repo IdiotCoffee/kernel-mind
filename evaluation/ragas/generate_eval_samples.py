@@ -11,10 +11,7 @@ from retrieval.pipeline import retrieve_context
 from routing.modes import QueryMode
 
 
-def generate_eval_samples(
-    runtime,
-    benchmark_path,
-):
+def generate_eval_samples(runtime, benchmark_path, evaluation_mode=False):
 
     # =====================================================
     # Load Benchmarks
@@ -83,6 +80,7 @@ def generate_eval_samples(
             query=question,
             results=retrieval_results,
             runtime=runtime,
+            evaluation_mode=evaluation_mode,
             mode=QueryMode.WORKFLOW,
             confidence={
                 "label": "HIGH",
@@ -99,7 +97,7 @@ def generate_eval_samples(
             answer = str(answer)
 
         print("\nANSWER:\n")
-        print(answer[:1000])
+        print(answer)
 
         # -------------------------------------------------
         # Sample
