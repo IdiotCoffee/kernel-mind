@@ -23,8 +23,10 @@ def parse_python_file(path: str, repo_path: str) -> List[CodeChunk]:
 
     chunks: List[CodeChunk] = []
 
-    chunks.extend(extract_functions(tree, source, module_name, path, imports))
+    chunks.extend(
+        extract_functions(tree, source, module_name, path, repo_path, imports)
+    )
 
-    chunks.extend(extract_classes(tree, source, module_name, path, imports))
+    chunks.extend(extract_classes(tree, source, module_name, path, repo_path, imports))
 
     return chunks

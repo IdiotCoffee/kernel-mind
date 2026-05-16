@@ -189,8 +189,12 @@ def expand_context(
 
             # Strong mismatch:
             # skip semantic sibling pollution
-            # if operation_score < -0.2:
+            # if operation_score < -0.35:
             #     continue
+            mismatch_penalty = 1.0
+
+            if operation_score < 0:
+                mismatch_penalty *= 0.65
 
             # ---------------------------------------------
             # Query-aware traversal boost
@@ -211,7 +215,11 @@ def expand_context(
             # ---------------------------------------------
 
             edge_adjusted_score = (
-                propagated_score * edge.weight * get_decay(depth + 1) * query_multiplier
+                propagated_score
+                * edge.weight
+                * get_decay(depth + 1)
+                * query_multiplier
+                * mismatch_penalty
             )
 
             # ---------------------------------------------
@@ -259,8 +267,10 @@ def expand_context(
 
             # Strong mismatch:
             # suppress semantic sibling drift
-            # if operation_score < -0.2:
-            #     continue
+            mismatch_penalty = 1.0
+
+            if operation_score < 0:
+                mismatch_penalty *= 0.65
 
             # ---------------------------------------------
             # Connectivity hub suppression
@@ -295,6 +305,7 @@ def expand_context(
                 * hub_penalty
                 * query_multiplier
                 * 0.45
+                * mismatch_penalty
             )
 
             # ---------------------------------------------

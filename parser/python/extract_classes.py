@@ -1,4 +1,5 @@
 import ast
+from pathlib import Path
 from typing import List
 
 from db.models import CodeChunk
@@ -10,6 +11,7 @@ def extract_classes(
     source: str,
     module_name: str,
     path: str,
+    repo_path: str,
     imports: dict[str, str],
 ) -> List[CodeChunk]:
     """Extract class and method definitions from the AST tree."""
@@ -31,7 +33,8 @@ def extract_classes(
                     type="class",
                     fqn=class_fqn,
                     module=module_name,
-                    file_path=path,
+                    # file_path=path,
+                    file_path=str(Path(path).relative_to(repo_path)),
                     parent_fqn=None,
                     code=class_code,
                     docstring=ast.get_docstring(node),
@@ -59,14 +62,17 @@ def extract_classes(
                             type="method",
                             fqn=method_fqn,
                             module=module_name,
-                            file_path=path,
+                            # file_path=path,
+                            file_path=str(Path(path).relative_to(repo_path)),
                             parent_fqn=class_fqn,
                             code=method_code,
                             docstring=ast.get_docstring(item),
                             calls=method_calls,
                             imports=imports,
-                            start_line=node.lineno,
-                            end_line=node.end_lineno or node.lineno,
+                            # start_line=node.lineno,
+                            # end_line=node.end_lineno or node.lineno,
+                            start_line=item.lineno,
+                            end_line=item.end_lineno or item.lineno,
                         )
                     )
 

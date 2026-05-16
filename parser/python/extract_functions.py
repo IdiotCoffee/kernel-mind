@@ -1,4 +1,5 @@
 import ast
+from pathlib import Path
 from typing import List
 
 from db.models import CodeChunk
@@ -10,6 +11,7 @@ def extract_functions(
     source: str,
     module_name: str,
     path: str,
+    repo_path: str,
     imports: dict[str, str],
 ) -> List[CodeChunk]:
     """Extract function definitions from the AST tree."""
@@ -31,7 +33,8 @@ def extract_functions(
                     type="function",
                     fqn=fqn,
                     module=module_name,
-                    file_path=path,
+                    # file_path=path,
+                    file_path=str(Path(path).relative_to(repo_path)),
                     parent_fqn=None,
                     code=code,
                     docstring=ast.get_docstring(node),

@@ -7,6 +7,52 @@ class AnswerGenerator:
 
         self.provider = provider
 
+    def append_sources(
+        self,
+        answer,
+        results,
+        runtime,
+    ):
+        """
+        Append deterministic source citations.
+        """
+
+        seen = set()
+
+        citations = []
+
+        for item in results[:8]:
+            chunk = runtime.chunk_lookup.get(item["fqn"])
+
+            if not chunk:
+                continue
+
+            key = (
+                chunk.file_path,
+                chunk.start_line,
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            citations.append(
+                (
+                    f"- "
+                    f"[{chunk.file_path}]"
+                    f"(source://{chunk.file_path}"
+                    f"#L{chunk.start_line})"
+                )
+            )
+
+        if not citations:
+            return answer
+
+        citation_block = "\n".join(citations)
+
+        return f"{answer}\n\n## Sources\n\n{citation_block}"
+
     # =====================================================
     # Prompt Selection
     # =====================================================

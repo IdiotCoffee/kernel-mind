@@ -1,3 +1,5 @@
+import asyncio
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
@@ -61,9 +63,19 @@ class ChatScreen(Screen):
         retrieval_panel = self.query_one(RetrievalPanel)
         graph_panel = self.query_one(GraphPanel)
         answer_panel = self.query_one(AnswerPanel)
+        # answer_panel.repo_root = self.runtime.repo_path
+        answer_panel.repo_root = (
+            "/home/idiotcoffee/Desktop/kernel-mind-v2/"
+            f"kernel-mind/repos/{self.runtime.repo_id}"
+        )
         logs_panel = self.query_one(LogsPanel)
+        # logs_panel.write_log(str(self.runtime.__dict__))
 
         answer_panel.clear_answer()
+        answer_panel.start_loading()
+
+        # allow UI repaint
+        await asyncio.sleep(0.05)
 
         mode = self.classifier.classify(query)
 
@@ -115,8 +127,51 @@ class ChatScreen(Screen):
         # ============================================
         # Stream Answer
         # ============================================
+        # await asyncio.sleep(0.05)
+        answer_panel.stop_loading()
+        full_answer = ""
 
         for token in response["stream"]:
+            full_answer += token
+
             answer_panel.stream_token(token)
+
+        # ============================================
+        # Append deterministic citations
+        # ============================================
+
+        citations = []
+
+        seen = set()
+
+        for item in response["results"][:8]:
+            chunk = self.runtime.chunk_lookup.get(item["fqn"])
+
+            if not chunk:
+                continue
+
+            key = (
+                chunk.file_path,
+                chunk.start_line,
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            citations.append(
+                (
+                    f"- "
+                    f"[{chunk.file_path}]"
+                    f"(source://{chunk.file_path}"
+                    f"#L{chunk.start_line})"
+                )
+            )
+
+        if citations:
+            citation_block = "\n\n## Sources\n\n" + "\n".join(citations)
+
+            answer_panel.stream_token(citation_block)
 
         event.input.value = ""
