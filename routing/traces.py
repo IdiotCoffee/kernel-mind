@@ -1,15 +1,23 @@
 from collections import defaultdict
 
 
-def build_reasoning_trace(results):
+def build_reasoning_trace(results, top_per_depth=3):
     """
-    Build lightweight reasoning traces
-    from retrieved graph-expanded results.
+    Build lightweight workflow visualization traces.
 
     This is NOT chain-of-thought.
 
     It is:
     repository evidence tracing.
+
+    Returns:
+        [
+            {
+                "fqn": "...",
+                "depth": 1,
+                "score": 0.91,
+            }
+        ]
     """
 
     if not results:
@@ -41,7 +49,7 @@ def build_reasoning_trace(results):
         )
 
     # =====================================================
-    # Build trace
+    # Build expanded trace
     # =====================================================
 
     trace = []
@@ -49,25 +57,37 @@ def build_reasoning_trace(results):
     sorted_depths = sorted(depth_groups.keys())
 
     for depth in sorted_depths:
-        if not depth_groups[depth]:
-            continue
+        top_nodes = depth_groups[depth][:top_per_depth]
 
-        best = depth_groups[depth][0]
-
-        trace.append(best["fqn"])
+        for node in top_nodes:
+            trace.append(
+                {
+                    "fqn": node["fqn"],
+                    "depth": depth,
+                    "score": round(
+                        node.get(
+                            "final_score",
+                            node.get("score", 0),
+                        ),
+                        4,
+                    ),
+                }
+            )
 
     # =====================================================
-    # Deduplicate sequentially
+    # Deduplicate globally
     # =====================================================
+
+    seen = set()
 
     cleaned = []
 
-    prev = None
-
     for node in trace:
-        if node != prev:
-            cleaned.append(node)
+        if node["fqn"] in seen:
+            continue
 
-        prev = node
+        seen.add(node["fqn"])
+
+        cleaned.append(node)
 
     return cleaned

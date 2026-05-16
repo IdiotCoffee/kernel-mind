@@ -22,8 +22,25 @@ class GraphPanel(Vertical):
 
         self.retrieval_log.clear()
 
-        for idx, node in enumerate(trace):
-            indent = "  " * idx
-            prefix = "└── " if idx > 0 else ""
+        if not trace:
+            self.retrieval_log.write("[red]No workflow trace available.[/red]")
+            return
 
-            self.retrieval_log.write(f"{indent}[bold green]{prefix}{node}[/bold green]")
+        for node in trace:
+            name = node["fqn"].split(".")[-1]
+
+            depth = node.get("depth", 0)
+
+            score = node.get("score", 0)
+
+            indent = "│   " * max(depth - 1, 0)
+
+            prefix = "" if depth == 0 else "├── "
+
+            line = (
+                f"{indent}"
+                f"[bold green]{prefix}{name}[/bold green] "
+                f"[white](d={depth}, score={score})[/white]"
+            )
+
+            self.retrieval_log.write(line)
